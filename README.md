@@ -136,6 +136,35 @@ ruff check .
 ruff format .
 ```
 
+### CLI examples (Meta insights)
+- Sync yesterday’s campaign-level insights to the configured tenant (e.g., Fleming):
+```bash
+psn meta sync-insights \
+  --account-id act_1234567890 \
+  --level campaign \
+  --date-preset yesterday \
+  --tenant fleming
+```
+
+- Backfill last 7 days at the ad set level:
+```bash
+psn meta sync-insights \
+  --account-id act_1234567890 \
+  --level adset \
+  --date-preset last_7d \
+  --tenant fleming
+```
+
+- Use explicit dates at the ad level (mutually exclusive with --date-preset):
+```bash
+psn meta sync-insights \
+  --account-id act_1234567890 \
+  --level ad \
+  --since 2025-09-01 \
+  --until 2025-09-07 \
+  --tenant fleming
+```
+
 ### Type Checking
 ```bash
 mypy .
