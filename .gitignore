@@ -151,3 +151,8 @@ ehthumbs.db
 
 # Claude
 .claude/
+
+# Terraform local state and providers
+infra/**/.terraform/
+infra/**/.terraform.lock.hcl
+infra/**/terraform.tfstate*
