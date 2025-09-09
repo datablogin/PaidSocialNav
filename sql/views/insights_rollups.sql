@@ -28,10 +28,10 @@ windows AS (
   UNION ALL SELECT 'MTD', p.month_start, p.yesterday FROM params p
   UNION ALL SELECT 'YTD', DATE(p.y, 1, 1), p.yesterday FROM params p
   UNION ALL SELECT 'last_quarter', DATE_SUB(p.quarter_start, INTERVAL 1 QUARTER), DATE_SUB(p.quarter_start, INTERVAL 1 DAY) FROM params p
-  UNION ALL SELECT 'Q1', DATE(p.y, 1, 1), DATE(p.y, 3, 31) FROM params p
-  UNION ALL SELECT 'Q2', DATE(p.y, 4, 1), DATE(p.y, 6, 30) FROM params p
-  UNION ALL SELECT 'Q3', DATE(p.y, 7, 1), DATE(p.y, 9, 30) FROM params p
-  UNION ALL SELECT 'Q4', DATE(p.y, 10, 1), DATE(p.y, 12, 31) FROM params p
+  UNION ALL SELECT 'Q1', DATE(p.y, 1, 1), LEAST(DATE(p.y, 3, 31), p.yesterday) FROM params p
+  UNION ALL SELECT 'Q2', DATE(p.y, 4, 1), LEAST(DATE(p.y, 6, 30), p.yesterday) FROM params p
+  UNION ALL SELECT 'Q3', DATE(p.y, 7, 1), LEAST(DATE(p.y, 9, 30), p.yesterday) FROM params p
+  UNION ALL SELECT 'Q4', DATE(p.y, 10, 1), LEAST(DATE(p.y, 12, 31), p.yesterday) FROM params p
 ),
 rolled AS (
   SELECT

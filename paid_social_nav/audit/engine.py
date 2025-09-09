@@ -42,7 +42,13 @@ class AuditEngine:
     def __init__(self, cfg: AuditConfig, bq: BQClient | None = None):
         self.cfg = cfg
         self.bq = bq or BQClient(project=cfg.project)
-        self.dataset = f"{cfg.project}.{self.cfg.dataset}"
+        # Validate dataset identifier to reduce risk of SQL injection via table refs
+        proj = cfg.project.strip()
+        dset = self.cfg.dataset.strip()
+        import re
+        if not re.match(r"^[A-Za-z0-9_\-]+$", proj) or not re.match(r"^[A-Za-z0-9_]+$", dset):
+            raise ValueError("Invalid project/dataset identifier")
+        self.dataset = f"{proj}.{dset}"
 
     def run(self) -> dict[str, Any]:
         per_rule: list[dict[str, Any]] = []
@@ -53,10 +59,12 @@ class AuditEngine:
 
         # 1) Pacing vs target
         if "pacing_vs_target" in self.cfg.weights:
-            for window in self.cfg.windows:
-                actual = self._actual_spend(window)
-                target = self._target_spend(window)
-                rr = R.pacing_vs_target(
+            w = float(self.cfg.weights.get("pacing_vs_target", 0.0))
+            if w > 0:
+                for window in self.cfg.windows:
+                    actual = self._actual_spend(window)
+                    target = self._target_spend(window)
+                    rr = R.pacing_vs_target(
                     actual_spend=actual,
                     target_spend=target,
                     tolerance=float(self.cfg.thresholds.get("pacing_tolerance", 0.1)),
@@ -152,7 +160,10 @@ class AuditEngine:
                 weighted_sum += w * rr.score
                 weight_total += w
 
-        overall = (weighted_sum / weight_total) if weight_total > 0 else 0.0
+        if weight_total <= 0:
+            overall = 0.0
+        else:
+            overall = weighted_sum / max(weight_total, 1e-9)
         return {"overall_score": overall, "rules": per_rule}
 
     def _fetch_kpis(self) -> list[dict[str, Any]]:

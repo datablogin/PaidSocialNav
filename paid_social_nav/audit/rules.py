@@ -129,7 +129,8 @@ def budget_concentration(
     elif top_n_cum_share <= max_share:
         score = 100.0
     else:
-        over = (top_n_cum_share - max_share) / (1.0 - max_share)
+        denom = max(1e-9, 1.0 - max_share)
+        over = (top_n_cum_share - max_share) / denom
         score = 100.0 * _clamp01(1.0 - over)
     return RuleResult(
         rule="budget_concentration",
