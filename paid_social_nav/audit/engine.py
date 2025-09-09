@@ -7,7 +7,7 @@ from typing import Any
 import yaml
 
 from ..storage.bq import BQClient
-from . import rules as R
+from . import rules
 
 
 dataclass_kwargs = {"slots": True}
@@ -64,14 +64,14 @@ class AuditEngine:
                 for window in self.cfg.windows:
                     actual = self._actual_spend(window)
                     target = self._target_spend(window)
-                    rr = R.pacing_vs_target(
-                    actual_spend=actual,
-                    target_spend=target,
-                    tolerance=float(self.cfg.thresholds.get("pacing_tolerance", 0.1)),
-                    tol_cap=float(self.cfg.thresholds.get("pacing_tol_cap", 0.5)),
-                    level=self.cfg.level,
-                    window=window,
-                )
+                    rr = rules.pacing_vs_target(
+                        actual_spend=actual,
+                        target_spend=target,
+                        tolerance=float(self.cfg.thresholds.get("pacing_tolerance", 0.1)),
+                        tol_cap=float(self.cfg.thresholds.get("pacing_tol_cap", 0.5)),
+                        level=self.cfg.level,
+                        window=window,
+                    )
                 per_rule.append(self._serialize_rr(rr))
                 w = float(self.cfg.weights.get("pacing_vs_target", 0.0))
                 weighted_sum += w * rr.score
@@ -86,7 +86,7 @@ class AuditEngine:
                 avg_freq = sum(freq_vals) / len(freq_vals) if freq_vals else 0.0
 
                 if "ctr_threshold" in self.cfg.weights:
-                    rr = R.ctr_threshold(
+                    rr = rules.ctr_threshold(
                         ctr=avg_ctr,
                         min_ctr=float(self.cfg.thresholds.get("min_ctr", 0.01)),
                         level=self.cfg.level,
@@ -98,7 +98,7 @@ class AuditEngine:
                     weight_total += w
 
                 if "frequency_threshold" in self.cfg.weights:
-                    rr = R.frequency_threshold(
+                    rr = rules.frequency_threshold(
                         frequency=avg_freq,
                         max_frequency=float(self.cfg.thresholds.get("max_frequency", 2.5)),
                         overage_cap=float(self.cfg.thresholds.get("freq_overage_cap", 1.0)),
@@ -114,7 +114,7 @@ class AuditEngine:
         if "budget_concentration" in self.cfg.weights and self.cfg.top_n:
             for window in self.cfg.windows:
                 top_n_share = self._fetch_top_n_share(window=window, top_n=self.cfg.top_n)
-                rr = R.budget_concentration(
+                rr = rules.budget_concentration(
                     top_n_cum_share=top_n_share,
                     max_share=float(self.cfg.thresholds.get("max_topn_share", 0.7)),
                     level=self.cfg.level,
@@ -129,7 +129,7 @@ class AuditEngine:
         if "creative_diversity" in self.cfg.weights:
             for window in self.cfg.windows:
                 video_share, image_share = self._fetch_creative_shares(window=window)
-                rr = R.creative_diversity(
+                rr = rules.creative_diversity(
                     video_share=video_share,
                     image_share=image_share,
                     min_video_share=float(self.cfg.thresholds.get("min_video_share", 0.2)),
@@ -146,7 +146,7 @@ class AuditEngine:
         if "tracking_health" in self.cfg.weights:
             for window in self.cfg.windows:
                 clicks, conversions, conv_rate = self._fetch_tracking(window=window)
-                rr = R.tracking_health(
+                rr = rules.tracking_health(
                     conversions_present=conversions > 0,
                     conv_rate=conv_rate,
                     min_conv_rate=float(self.cfg.thresholds.get("min_conv_rate", 0.01)),
@@ -254,7 +254,7 @@ class AuditEngine:
         return float(rows[0].get("spend") or 0.0)
 
     @staticmethod
-    def _serialize_rr(rr: R.RuleResult) -> dict[str, Any]:
+    def _serialize_rr(rr: rules.RuleResult) -> dict[str, Any]:
         return {
             "rule": rr.rule,
             "level": rr.level,
