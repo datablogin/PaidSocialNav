@@ -125,6 +125,17 @@ pip install -e ".[dev,test]"
 
 ## Development
 
+### One-time developer setup (recommended)
+- Install pre-commit locally so formatting and hygiene checks run before each commit:
+  ```bash
+  pip install pre-commit
+  pre-commit install
+  ```
+  This enables:
+  - Ruff lint with auto-fix (ruff --fix)
+  - Ruff format (ruff format)
+  - Basic hygiene checks (no BOM, trailing whitespace, end-of-file newline, merge conflicts)
+
 ### Running Tests
 ```bash
 pytest
@@ -134,6 +145,8 @@ pytest
 ```bash
 ruff check .
 ruff format .
+# Or run all pre-commit hooks (same checks CI expects):
+pre-commit run --all-files
 ```
 
 ### CLI examples (Meta insights)
