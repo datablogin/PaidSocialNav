@@ -6,8 +6,8 @@ from typing import Any
 
 import yaml
 
-from . import rules as R
 from ..storage.bq import BQClient
+from . import rules as R
 
 
 dataclass_kwargs = {"slots": True}

@@ -1,5 +1,6 @@
-import os
 import json
+import os
+
 import pytest
 
 INTEGRATION = os.getenv("PSN_INTEGRATION") == "1"
