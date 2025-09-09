@@ -1,10 +1,14 @@
 [project]
-name = "metagraphapi"
+name = "paid-social-nav"
 version = "0.1.0"
 description = "Unified social media advertising API for Meta, Reddit, Pinterest, TikTok, and X"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+  "typer>=0.12",
+  "PyYAML>=6.0",
+  "google-cloud-bigquery>=3.11",
+]
 
 [project.optional-dependencies]
 test = [
@@ -21,6 +25,14 @@ dev = [
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["paid_social_nav"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["paid_social_nav*"]
+exclude = ["tests*", "sql*", "infra*", "configs*"]
 
 [tool.ruff]
 line-length = 88
@@ -43,5 +55,5 @@ python_files = ["test_*.py", "*_test.py"]
 addopts = "-v"
 
 [tool.coverage.run]
-source = ["metagraphapi"]
+source = ["paid_social_nav"]
 omit = ["*/tests/*", "*/test_*"]
