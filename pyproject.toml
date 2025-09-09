@@ -26,9 +26,6 @@ dev = [
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["paid_social_nav"]
-
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["paid_social_nav*"]
