@@ -35,7 +35,9 @@ def run_audit(config_path: str) -> AuditResult:
     cfg = _load_config(config_path)
     engine = AuditEngine(cfg)
     result_dict = engine.run()
-    return AuditResult(overall_score=result_dict["overall_score"], rules=result_dict["rules"])
+    return AuditResult(
+        overall_score=result_dict["overall_score"], rules=result_dict["rules"]
+    )
 
 
 class AuditEngine:
@@ -46,7 +48,10 @@ class AuditEngine:
         proj = cfg.project.strip()
         dset = self.cfg.dataset.strip()
         import re
-        if not re.match(r"^[A-Za-z0-9_\-]+$", proj) or not re.match(r"^[A-Za-z0-9_]+$", dset):
+
+        if not re.match(r"^[A-Za-z0-9_\-]+$", proj) or not re.match(
+            r"^[A-Za-z0-9_]+$", dset
+        ):
             raise ValueError("Invalid project/dataset identifier")
         self.dataset = f"{proj}.{dset}"
 
@@ -67,7 +72,9 @@ class AuditEngine:
                     rr = rules.pacing_vs_target(
                         actual_spend=actual,
                         target_spend=target,
-                        tolerance=float(self.cfg.thresholds.get("pacing_tolerance", 0.1)),
+                        tolerance=float(
+                            self.cfg.thresholds.get("pacing_tolerance", 0.1)
+                        ),
                         tol_cap=float(self.cfg.thresholds.get("pacing_tol_cap", 0.5)),
                         level=self.cfg.level,
                         window=window,
@@ -78,10 +85,19 @@ class AuditEngine:
                 weight_total += w
 
         # 2) CTR and frequency
-        if "ctr_threshold" in self.cfg.weights or "frequency_threshold" in self.cfg.weights:
+        if (
+            "ctr_threshold" in self.cfg.weights
+            or "frequency_threshold" in self.cfg.weights
+        ):
             for window in self.cfg.windows:
-                ctr_vals = [x["ctr"] for x in kpis if x["window"] == window and x.get("impressions", 0) > 0]
-                freq_vals = [x.get("frequency", 0.0) for x in kpis if x["window"] == window]
+                ctr_vals = [
+                    x["ctr"]
+                    for x in kpis
+                    if x["window"] == window and x.get("impressions", 0) > 0
+                ]
+                freq_vals = [
+                    x.get("frequency", 0.0) for x in kpis if x["window"] == window
+                ]
                 avg_ctr = sum(ctr_vals) / len(ctr_vals) if ctr_vals else 0.0
                 avg_freq = sum(freq_vals) / len(freq_vals) if freq_vals else 0.0
 
@@ -100,8 +116,12 @@ class AuditEngine:
                 if "frequency_threshold" in self.cfg.weights:
                     rr = rules.frequency_threshold(
                         frequency=avg_freq,
-                        max_frequency=float(self.cfg.thresholds.get("max_frequency", 2.5)),
-                        overage_cap=float(self.cfg.thresholds.get("freq_overage_cap", 1.0)),
+                        max_frequency=float(
+                            self.cfg.thresholds.get("max_frequency", 2.5)
+                        ),
+                        overage_cap=float(
+                            self.cfg.thresholds.get("freq_overage_cap", 1.0)
+                        ),
                         level=self.cfg.level,
                         window=window,
                     )
@@ -113,7 +133,9 @@ class AuditEngine:
         # 3) Budget concentration (top-N share)
         if "budget_concentration" in self.cfg.weights and self.cfg.top_n:
             for window in self.cfg.windows:
-                top_n_share = self._fetch_top_n_share(window=window, top_n=self.cfg.top_n)
+                top_n_share = self._fetch_top_n_share(
+                    window=window, top_n=self.cfg.top_n
+                )
                 rr = rules.budget_concentration(
                     top_n_cum_share=top_n_share,
                     max_share=float(self.cfg.thresholds.get("max_topn_share", 0.7)),
@@ -132,8 +154,12 @@ class AuditEngine:
                 rr = rules.creative_diversity(
                     video_share=video_share,
                     image_share=image_share,
-                    min_video_share=float(self.cfg.thresholds.get("min_video_share", 0.2)),
-                    min_image_share=float(self.cfg.thresholds.get("min_image_share", 0.2)),
+                    min_video_share=float(
+                        self.cfg.thresholds.get("min_video_share", 0.2)
+                    ),
+                    min_image_share=float(
+                        self.cfg.thresholds.get("min_image_share", 0.2)
+                    ),
                     level=self.cfg.level,
                     window=window,
                 )
@@ -150,7 +176,9 @@ class AuditEngine:
                     conversions_present=conversions > 0,
                     conv_rate=conv_rate,
                     min_conv_rate=float(self.cfg.thresholds.get("min_conv_rate", 0.01)),
-                    min_clicks=int(self.cfg.thresholds.get("min_clicks_for_tracking", 100)),
+                    min_clicks=int(
+                        self.cfg.thresholds.get("min_clicks_for_tracking", 100)
+                    ),
                     clicks=clicks,
                     level=self.cfg.level,
                     window=window,
@@ -191,7 +219,9 @@ class AuditEngine:
         FROM `{self.dataset}.v_budget_concentration`
         WHERE level = @level AND `window` = @window AND rank <= @top_n
         """
-        rows = self.bq.query_rows(sql, params={"level": self.cfg.level, "window": window, "top_n": top_n})
+        rows = self.bq.query_rows(
+            sql, params={"level": self.cfg.level, "window": window, "top_n": top_n}
+        )
         if not rows:
             return 0.0
         return float(rows[0].get("top_n_share") or 0.0)
@@ -203,7 +233,9 @@ class AuditEngine:
         FROM `{self.dataset}.v_creative_mix`
         WHERE level = @level AND `window` = @window
         """
-        rows = self.bq.query_rows(sql, params={"level": self.cfg.level, "window": window})
+        rows = self.bq.query_rows(
+            sql, params={"level": self.cfg.level, "window": window}
+        )
         if not rows:
             return 0.0, 0.0
         vs = rows[0].get("video_share")
@@ -219,12 +251,18 @@ class AuditEngine:
         FROM `{self.dataset}.insights_rollups`
         WHERE level = @level AND `window` = @window
         """
-        rows = self.bq.query_rows(sql, params={"level": self.cfg.level, "window": window})
+        rows = self.bq.query_rows(
+            sql, params={"level": self.cfg.level, "window": window}
+        )
         if not rows:
             return 0, 0, None
         clicks = int(rows[0].get("clicks") or 0)
         conv = int(rows[0].get("conversions") or 0)
-        conv_rate = float(rows[0].get("conv_rate")) if rows[0].get("conv_rate") is not None else None
+        conv_rate = (
+            float(rows[0].get("conv_rate"))
+            if rows[0].get("conv_rate") is not None
+            else None
+        )
         return clicks, conv, conv_rate
 
     def _target_spend(self, window: str) -> float:
@@ -238,7 +276,9 @@ class AuditEngine:
             rows = self.bq.query_rows(sql, params={"window": window})
             if rows:
                 return float(rows[0].get("target") or 0.0)
-        per_window_targets: dict[str, float] = self.cfg.thresholds.get("target_spend_by_window", {})
+        per_window_targets: dict[str, float] = self.cfg.thresholds.get(
+            "target_spend_by_window", {}
+        )
         return float(per_window_targets.get(window, 0.0))
 
     def _actual_spend(self, window: str) -> float:
@@ -248,7 +288,9 @@ class AuditEngine:
         FROM `{self.dataset}.v_budget_pacing`
         WHERE level = @level AND `window` = @window
         """
-        rows = self.bq.query_rows(sql, params={"level": self.cfg.level, "window": window})
+        rows = self.bq.query_rows(
+            sql, params={"level": self.cfg.level, "window": window}
+        )
         if not rows:
             return 0.0
         return float(rows[0].get("spend") or 0.0)
@@ -276,4 +318,3 @@ def _load_config(path: str) -> AuditConfig:
         thresholds=dict(data.get("thresholds", {})),
         top_n=data.get("top_n"),
     )
-

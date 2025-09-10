@@ -22,4 +22,3 @@ precommit:
 
 test:
 	pytest -v
-

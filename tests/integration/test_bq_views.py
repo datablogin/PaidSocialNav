@@ -51,4 +51,3 @@ def test_creative_mix_has_values_or_nulls():
     assert isinstance(data, list)
     # OK for shares to be 0..1 or null if media mapping missing for some ads
     assert len(data) >= 1
-

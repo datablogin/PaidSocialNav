@@ -1,0 +1,6 @@
+tenants:
+  fleming:
+    project_id: fleming-424413
+    dataset: paid_social
+    default_level: ad
+

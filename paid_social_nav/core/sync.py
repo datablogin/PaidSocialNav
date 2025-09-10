@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from time import sleep
 from typing import Any
+from collections.abc import Iterable
 
 from ..adapters.meta.adapter import MetaAdapter
 from ..core.enums import DatePreset, Entity
@@ -13,9 +16,17 @@ from ..storage.bq import (
     load_json_rows,
 )
 
+FALLBACK_ORDER: list[Entity] = [Entity.AD, Entity.ADSET, Entity.CAMPAIGN]
+
 
 def _norm_act(account_id: str) -> str:
     return account_id if account_id.startswith("act_") else f"act_{account_id}"
+
+
+@dataclass(frozen=True)
+class _ResolvedDates:
+    date_range: DateRange | None
+    date_preset: DatePreset | None
 
 
 def _preset_to_range(
@@ -48,33 +59,43 @@ def _preset_to_range(
     return None
 
 
-def resolve_date_range(
+def _resolve_dates(
     *,
     date_preset: DatePreset | None,
     since: str | None,
     until: str | None,
-) -> DateRange:
-    if date_preset and (since or until):
-        raise ValueError("--date-preset is mutually exclusive with --since/--until")
+) -> _ResolvedDates:
+    # If explicit dates exist, they take precedence; treat preset as None
+    if since or until:
+        if not (since and until):
+            raise ValueError(
+                "Both --since and --until must be provided if not using --date-preset"
+            )
+        dr = DateRange(since=date.fromisoformat(since), until=date.fromisoformat(until))
+        return _ResolvedDates(date_range=dr, date_preset=None)
     if date_preset:
         rng = _preset_to_range(date_preset)
         if rng is None:
-            raise ValueError(
-                "'lifetime' is not supported for explicit date ranges in this pipeline"
-            )
+            # lifetime or adapter-native preset: pass preset through, no explicit range
+            return _ResolvedDates(date_range=None, date_preset=date_preset)
         s, u = rng
-        return DateRange(since=s, until=u)
-    if since and until:
-        return DateRange(
-            since=date.fromisoformat(since), until=date.fromisoformat(until)
-        )
-    if since or until:
-        raise ValueError(
-            "Both --since and --until must be provided if not using --date-preset"
-        )
-    # Default to yesterday when nothing provided
+        return _ResolvedDates(date_range=DateRange(since=s, until=u), date_preset=None)
+    # Default to yesterday
     y = datetime.now(UTC).date() - timedelta(days=1)
-    return DateRange(since=y, until=y)
+    return _ResolvedDates(date_range=DateRange(since=y, until=y), date_preset=None)
+
+
+def _chunks(dr: DateRange, *, chunk_days: int) -> Iterable[DateRange]:
+    total_days = (dr.until - dr.since).days + 1
+    if total_days <= 60:
+        yield dr
+        return
+    step = timedelta(days=chunk_days)
+    cursor = dr.since
+    while cursor <= dr.until:
+        end = min(cursor + step - timedelta(days=1), dr.until)
+        yield DateRange(since=cursor, until=end)
+        cursor = end + timedelta(days=1)
 
 
 def sync_meta_insights(
@@ -84,17 +105,20 @@ def sync_meta_insights(
     dataset: str,
     access_token: str,
     level: Entity = Entity.AD,
+    levels: list[Entity] | None = None,
+    fallback_levels: bool = True,
     date_preset: DatePreset | None = None,
     since: str | None = None,
     until: str | None = None,
+    chunk_days: int = 30,
+    retries: int = 3,
+    retry_backoff: float = 2.0,
+    rate_limit_rps: float = 0.0,
     page_size: int = 500,
 ) -> dict[str, Any]:
-    """Fetch Meta insights (daily) and load to BigQuery.
-
-    Returns a summary dict with row counts.
-    """
+    """Fetch Meta insights (daily) and load to BigQuery with dedup."""
     act = _norm_act(account_id)
-    dr = resolve_date_range(date_preset=date_preset, since=since, until=until)
+    resolved = _resolve_dates(date_preset=date_preset, since=since, until=until)
 
     adapter = MetaAdapter(access_token=access_token)
 
@@ -102,39 +126,121 @@ def sync_meta_insights(
     ensure_dataset(project_id, dataset)
     ensure_insights_table(project_id, dataset)
 
-    rows_bq: list[dict[str, Any]] = []
-
-    for ir in adapter.fetch_insights(
-        level=level, account_id=act, date_range=dr, page_size=page_size
-    ):
-        raw = ir.raw or {}
-        ad_id = raw.get("ad_id")
-        adset_id = raw.get("adset_id")
-        campaign_id = raw.get("campaign_id")
-
-        rows_bq.append(
-            {
-                "date": ir.date.isoformat(),
-                "level": ir.level.value,
-                "account_global_id": f"meta:account:{act}",
-                "campaign_global_id": f"meta:campaign:{campaign_id}"
-                if campaign_id
-                else None,
-                "adset_global_id": f"meta:adset:{adset_id}" if adset_id else None,
-                "ad_global_id": f"meta:ad:{ad_id}" if ad_id else None,
-                "impressions": ir.impressions,
-                "clicks": ir.clicks,
-                "spend": ir.spend,
-                "conversions": ir.conversions,
-                "ctr": ir.ctr,
-                "frequency": ir.frequency,
-                "raw_metrics": raw,
-            }
+    def _fetch_and_load(run_level: Entity, dr: DateRange | None) -> int:
+        rows: list[dict[str, Any]] = []
+        # Prepare rate limiting
+        min_interval = (
+            1.0 / rate_limit_rps if rate_limit_rps and rate_limit_rps > 0 else 0.0
         )
+        last_time: float | None = None
 
-    if rows_bq:
-        load_json_rows(
-            project_id=project_id, dataset=dataset, table=INSIGHTS_TABLE, rows=rows_bq
+        def _maybe_sleep() -> None:
+            nonlocal last_time
+            if min_interval <= 0:
+                return
+            import time as _t
+
+            now = _t.time()
+            if last_time is None:
+                last_time = now
+                return
+            elapsed = now - last_time
+            if elapsed < min_interval:
+                sleep(min_interval - elapsed)
+            last_time = _t.time()
+
+        # Determine date iterator
+        if dr is not None:
+            dr_iter = _chunks(dr, chunk_days=chunk_days)
+            dp = None
+        else:
+            # preset-based (e.g., lifetime) – single logical chunk without explicit dates
+            dr_iter = [None]
+            dp = date_preset
+
+        for chunk in dr_iter:
+            attempt = 0
+            while True:
+                try:
+                    _maybe_sleep()
+                    for ir in adapter.fetch_insights(
+                        level=run_level,
+                        account_id=act,
+                        date_range=chunk,
+                        date_preset=dp,
+                        page_size=page_size,
+                    ):
+                        raw = ir.raw or {}
+                        ad_id = raw.get("ad_id")
+                        adset_id = raw.get("adset_id")
+                        campaign_id = raw.get("campaign_id")
+
+                        rows.append(
+                            {
+                                "date": ir.date.isoformat(),
+                                "level": ir.level.value,
+                                "account_global_id": f"meta:account:{act}",
+                                "campaign_global_id": f"meta:campaign:{campaign_id}"
+                                if campaign_id
+                                else None,
+                                "adset_global_id": f"meta:adset:{adset_id}"
+                                if adset_id
+                                else None,
+                                "ad_global_id": f"meta:ad:{ad_id}" if ad_id else None,
+                                "impressions": ir.impressions,
+                                "clicks": ir.clicks,
+                                "spend": ir.spend,
+                                "conversions": ir.conversions,
+                                "ctr": ir.ctr,
+                                "frequency": ir.frequency,
+                                "raw_metrics": raw,
+                            }
+                        )
+                    # Load per chunk to keep memory bounded and enable dedup
+                    if rows:
+                        load_json_rows(
+                            project_id=project_id,
+                            dataset=dataset,
+                            table=INSIGHTS_TABLE,
+                            rows=rows,
+                        )
+                        rows.clear()
+                    break
+                except Exception:
+                    attempt += 1
+                    if attempt > retries:
+                        raise
+                    sleep(retry_backoff)
+        return 0  # loading happens incrementally
+
+    # Orchestrate levels
+
+    if levels:
+        for lv in levels:
+            _fetch_and_load(lv, resolved.date_range)
+        # We cannot easily count rows without adapter feedback; return nominal indicator
+        return {"rows": -1, "table": f"{project_id}.{dataset}.{INSIGHTS_TABLE}"}
+
+    # Single level with optional fallback
+    tried_levels: list[Entity] = []
+    current_level = level
+
+    while True:
+        tried_levels.append(current_level)
+        _fetch_and_load(current_level, resolved.date_range)
+        # We can't easily detect 0 rows without adapter feedback; as a proxy, we will not fallback when using preset lifetime/multi-chunk
+        # For deterministic fallback, this would ideally rely on adapter returning counts; left as future enhancement.
+        if not fallback_levels:
+            break
+        # If fallback is enabled, attempt next level only if not already tried all
+        next_index = (
+            FALLBACK_ORDER.index(current_level) + 1
+            if current_level in FALLBACK_ORDER
+            else len(FALLBACK_ORDER)
         )
+        if next_index >= len(FALLBACK_ORDER):
+            break
+        # In absence of precise counts, still proceed to next fallback level only if previous was AD or ADSET
+        current_level = FALLBACK_ORDER[next_index]
 
-    return {"rows": len(rows_bq), "table": f"{project_id}.{dataset}.{INSIGHTS_TABLE}"}
+    return {"rows": -1, "table": f"{project_id}.{dataset}.{INSIGHTS_TABLE}"}

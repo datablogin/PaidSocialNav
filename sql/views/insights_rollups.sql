@@ -70,4 +70,3 @@ SELECT
   SAFE_DIVIDE(spend, NULLIF(conversions, 0)) AS cpa,
   CURRENT_TIMESTAMP() AS updated_at
 FROM rolled;
-

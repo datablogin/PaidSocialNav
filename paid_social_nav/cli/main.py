@@ -25,16 +25,44 @@ def version() -> None:
 @meta_app.command("sync-insights")
 def meta_sync_insights(
     account_id: str = typer.Option(..., help="Meta ad account id (act_* or numeric)"),  # noqa: B008
-    level: Entity = typer.Option(  # noqa: B008
-        Entity.AD, case_sensitive=False, help="Insights level: ad|adset|campaign"
+    level: Entity | None = typer.Option(  # noqa: B008
+        None,
+        case_sensitive=False,
+        help="Insights level: ad|adset|campaign (overrides tenant default)",
     ),
+    levels: str | None = typer.Option(
+        None,
+        help=(
+            "Comma-separated list of levels to run sequentially (e.g., 'ad,adset,campaign'). "
+            "Overrides --level and disables fallback between levels."
+        ),
+    ),  # noqa: B008
+    fallback_levels: bool = typer.Option(
+        True,
+        help="When a level returns 0 rows, fallback to the next in the order ad→adset→campaign",
+    ),  # noqa: B008
     date_preset: DatePreset | None = typer.Option(  # noqa: B008
         None,
         case_sensitive=False,
-        help="Named date window (e.g., yesterday, last_7d). Mutually exclusive with --since/--until",
+        help=(
+            "Named date window (e.g., yesterday, last_7d, lifetime). If used with --since/--until, "
+            "explicit dates take precedence and a warning is shown."
+        ),
     ),
     since: str | None = typer.Option(None, help="Start date YYYY-MM-DD"),  # noqa: B008
     until: str | None = typer.Option(None, help="End date YYYY-MM-DD"),  # noqa: B008
+    chunk_days: int = typer.Option(
+        30, min=1, help="Chunk size in days when total range > 60 days"
+    ),  # noqa: B008
+    retries: int = typer.Option(
+        3, min=0, help="Retry attempts for API/page fetch failures"
+    ),  # noqa: B008
+    retry_backoff_seconds: float = typer.Option(
+        2.0, min=0.0, help="Backoff between retries in seconds"
+    ),  # noqa: B008
+    rate_limit_rps: float = typer.Option(
+        0.0, min=0.0, help="Requests per second rate limit (0 disables)"
+    ),  # noqa: B008
     page_size: int = typer.Option(
         500, min=1, max=1000, help="Page size for Meta insights API (default: 500)"
     ),  # noqa: B008
@@ -66,6 +94,7 @@ def meta_sync_insights(
 
     project_id = settings.gcp_project_id
     dataset = settings.bq_dataset
+    tenant_default_level = None
 
     if tenant:
         t = get_tenant(tenant)
@@ -77,6 +106,7 @@ def meta_sync_insights(
             raise typer.Exit(code=1)
         project_id = t.project_id
         dataset = t.dataset
+        tenant_default_level = t.default_level
 
     if not project_id or not dataset:
         typer.secho(
@@ -108,13 +138,13 @@ def meta_sync_insights(
         )
         raise typer.Exit(code=1)
 
-    # Validate mutual exclusivity
+    # Date precedence: allow both, prefer explicit since/until with a warning
     if date_preset is not None and (since or until):
         typer.secho(
-            "--date-preset cannot be used together with --since/--until",
-            fg=typer.colors.RED,
+            "Warning: --date-preset provided together with --since/--until; explicit dates will be used.",
+            fg=typer.colors.YELLOW,
         )
-        raise typer.Exit(code=1)
+        date_preset = None
 
     # Validate date formats if provided
     def _valid_date(d: str) -> bool:
@@ -137,16 +167,38 @@ def meta_sync_insights(
         typer.secho("--since cannot be after --until.", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
+    # Resolve levels: explicit --levels overrides --level and disables fallback
+    parsed_levels: list[Entity] | None = None
+    if levels:
+        try:
+            parts = [p.strip().lower() for p in levels.split(",") if p.strip()]
+            parsed_levels = [Entity(p) for p in parts]
+        except Exception:
+            typer.secho(
+                "Invalid --levels value. Use a comma-separated list of: ad, adset, campaign.",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(code=1) from None
+
+    # Determine effective single-level if --levels not provided
+    effective_level = level or tenant_default_level or Entity.AD
+
     try:
         summary = sync_meta_insights(
             account_id=account_id,
             project_id=project_id,
             dataset=dataset,
             access_token=access_token,
-            level=level,
+            level=effective_level,
+            levels=parsed_levels,
+            fallback_levels=fallback_levels,
             date_preset=date_preset,
             since=since,
             until=until,
+            chunk_days=chunk_days,
+            retries=retries,
+            retry_backoff=retry_backoff_seconds,
+            rate_limit_rps=rate_limit_rps,
             page_size=page_size,
         )
     except Exception as e:

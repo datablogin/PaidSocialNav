@@ -28,7 +28,9 @@ def _score_linear_ok_above(actual: float, min_value: float) -> float:
     return 100.0 * _clamp01(actual / min_value)
 
 
-def _score_linear_ok_below(actual: float, max_value: float, overage_cap: float = 1.0) -> float:
+def _score_linear_ok_below(
+    actual: float, max_value: float, overage_cap: float = 1.0
+) -> float:
     if max_value <= 0:
         return 0.0
     if actual <= max_value:
@@ -198,4 +200,3 @@ def tracking_health(
             "min_clicks": min_clicks,
         },
     )
-

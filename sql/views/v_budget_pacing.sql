@@ -5,4 +5,3 @@ SELECT
   SUM(spend) AS spend
 FROM `fleming-424413.paid_social.insights_rollups`
 GROUP BY `level`, `window`;
-

@@ -168,15 +168,57 @@ psn meta sync-insights \
   --tenant fleming
 ```
 
-- Use explicit dates at the ad level (mutually exclusive with --date-preset):
+- Use explicit dates at the ad level (explicit dates take precedence over --date-preset):
 ```bash
 psn meta sync-insights \
   --account-id act_1234567890 \
   --level ad \
   --since 2025-09-01 \
   --until 2025-09-07 \
+  --date-preset last_7d \
   --tenant fleming
 ```
+
+- Run multiple levels in one command and disable fallback:
+```bash
+psn meta sync-insights \
+  --account-id act_1234567890 \
+  --levels ad,adset,campaign \
+  --no-fallback-levels \
+  --date-preset last_14d \
+  --tenant fleming
+```
+
+- Backfill a long range with chunking (ranges >60d are chunked into 30d windows by default):
+```bash
+psn meta sync-insights \
+  --account-id act_1234567890 \
+  --level ad \
+  --since 2024-01-01 \
+  --until 2024-12-31 \
+  --chunk-days 30 \
+  --tenant fleming
+```
+
+- Use the lifetime preset (adapter-native preset):
+```bash
+psn meta sync-insights \
+  --account-id act_1234567890 \
+  --level campaign \
+  --date-preset lifetime \
+  --tenant fleming
+```
+
+#### Tenant defaults
+Add a tenant default level in configs/tenants.yaml to avoid specifying --level each time:
+```yaml
+tenants:
+  fleming:
+    project_id: fleming-424413
+    dataset: paid_social
+    default_level: ad
+```
+The CLI resolves level in this order: --levels (if provided) > --level (if provided) > tenant default_level > ad.
 
 ### Type Checking
 ```bash

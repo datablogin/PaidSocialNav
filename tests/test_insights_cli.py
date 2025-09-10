@@ -92,12 +92,20 @@ class DummySettings:
 
 
 def test_meta_sync_insights_conflicting_flags(monkeypatch):
-    # Patch settings resolver used by CLI module
+    # Patch settings resolver used by CLI module and stub sync
     from paid_social_nav import cli as psn_cli
 
     monkeypatch.setattr(psn_cli.main, "get_settings", lambda: DummySettings())
 
-    # date_preset plus since/until should error at CLI validation
+    called = {}
+
+    def fake_sync(**kwargs):
+        called.update(kwargs)
+        return {"rows": 0}
+
+    monkeypatch.setattr(psn_cli.main, "sync_meta_insights", fake_sync)
+
+    # date_preset plus since/until should warn and prefer explicit dates
     result = runner.invoke(
         app,
         [
@@ -113,8 +121,11 @@ def test_meta_sync_insights_conflicting_flags(monkeypatch):
             "2025-09-02",
         ],
     )
-    assert result.exit_code != 0
-    assert "cannot be used together" in result.stdout
+    assert result.exit_code == 0
+    assert "Warning: --date-preset" in result.stdout
+    assert called.get("date_preset") is None
+    assert called.get("since") == "2025-09-01"
+    assert called.get("until") == "2025-09-02"
 
 
 def test_meta_sync_insights_defaults_to_yesterday_when_no_dates(monkeypatch):
@@ -129,8 +140,6 @@ def test_meta_sync_insights_defaults_to_yesterday_when_no_dates(monkeypatch):
     def fake_sync(**kwargs):
         called.update(kwargs)
         return {"rows": 0}
-
-    from paid_social_nav import cli as psn_cli
 
     # Patch the function as imported into the CLI module
     monkeypatch.setattr(psn_cli.main, "sync_meta_insights", fake_sync)
