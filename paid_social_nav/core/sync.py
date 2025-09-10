@@ -128,6 +128,7 @@ def sync_meta_insights(
 
     def _fetch_and_load(run_level: Entity, dr: DateRange | None) -> int:
         rows: list[dict[str, Any]] = []
+        loaded_count = 0
         # Prepare rate limiting
         min_interval = (
             1.0 / rate_limit_rps if rate_limit_rps and rate_limit_rps > 0 else 0.0
@@ -204,6 +205,7 @@ def sync_meta_insights(
                             table=INSIGHTS_TABLE,
                             rows=rows,
                         )
+                        loaded_count += len(rows)
                         rows.clear()
                     break
                 except Exception:
@@ -211,23 +213,24 @@ def sync_meta_insights(
                     if attempt > retries:
                         raise
                     sleep(retry_backoff)
-        return 0  # loading happens incrementally
+        return loaded_count  # loading happens incrementally
 
     # Orchestrate levels
 
     if levels:
+        total = 0
         for lv in levels:
-            _fetch_and_load(lv, resolved.date_range)
-        # We cannot easily count rows without adapter feedback; return nominal indicator
-        return {"rows": -1, "table": f"{project_id}.{dataset}.{INSIGHTS_TABLE}"}
+            total += _fetch_and_load(lv, resolved.date_range)
+        return {"rows": total, "table": f"{project_id}.{dataset}.{INSIGHTS_TABLE}"}
 
     # Single level with optional fallback
     tried_levels: list[Entity] = []
     current_level = level
 
+    total = 0
     while True:
         tried_levels.append(current_level)
-        _fetch_and_load(current_level, resolved.date_range)
+        total += _fetch_and_load(current_level, resolved.date_range)
         # We can't easily detect 0 rows without adapter feedback; as a proxy, we will not fallback when using preset lifetime/multi-chunk
         # For deterministic fallback, this would ideally rely on adapter returning counts; left as future enhancement.
         if not fallback_levels:
@@ -243,4 +246,4 @@ def sync_meta_insights(
         # In absence of precise counts, still proceed to next fallback level only if previous was AD or ADSET
         current_level = FALLBACK_ORDER[next_index]
 
-    return {"rows": -1, "table": f"{project_id}.{dataset}.{INSIGHTS_TABLE}"}
+    return {"rows": total, "table": f"{project_id}.{dataset}.{INSIGHTS_TABLE}"}
