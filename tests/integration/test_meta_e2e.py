@@ -7,10 +7,32 @@ from typer.testing import CliRunner
 
 from paid_social_nav.cli.main import app
 
+
+def _load_dotenv(path: str = ".env") -> None:
+    try:
+        if not os.path.exists(path):
+            return
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k = k.strip()
+                v = v.strip().strip('"').strip("'")
+                os.environ.setdefault(k, v)
+    except Exception:
+        pass
+
+
+_load_dotenv()
+
 INTEGRATION = os.getenv("PSN_INTEGRATION") == "1"
-PROJECT = os.getenv("GCP_PROJECT_ID", "fleming-424413")
-DATASET = os.getenv("BQ_DATASET", "paid_social")
-META_ACCOUNT_ID = os.getenv("META_ACCOUNT_ID")
+PROJECT = os.getenv("PSN_GCP_PROJECT_ID") or os.getenv(
+    "GCP_PROJECT_ID", "fleming-424413"
+)
+DATASET = os.getenv("PSN_BQ_DATASET") or os.getenv("BQ_DATASET", "paid_social")
+META_ACCOUNT_ID = os.getenv("PSN_META_ACCOUNT_ID") or os.getenv("META_ACCOUNT_ID")
 
 pytestmark = pytest.mark.skipif(
     not INTEGRATION or not META_ACCOUNT_ID,
@@ -24,7 +46,7 @@ def _norm_act(account_id: str) -> str:
 
 def test_meta_insights_e2e_loads_rows(monkeypatch):
     # Ensure META_ACCESS_TOKEN is available to CLI via settings
-    token = os.getenv("META_ACCESS_TOKEN")
+    token = os.getenv("PSN_META_ACCESS_TOKEN") or os.getenv("META_ACCESS_TOKEN")
     if not token:
         pytest.skip("META_ACCESS_TOKEN not set")
 
@@ -82,4 +104,3 @@ def test_meta_insights_e2e_loads_rows(monkeypatch):
     lines = out.strip().splitlines()
     assert len(lines) >= 2
     assert int(lines[1]) > 0
-

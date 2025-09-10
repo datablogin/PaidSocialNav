@@ -220,6 +220,10 @@ tenants:
 ```
 The CLI resolves level in this order: --levels (if provided) > --level (if provided) > tenant default_level > ad.
 
+Env resolution precedence:
+- Process environment > `.env` values
+- PSN-prefixed keys are preferred when present, with non-prefixed fallbacks (e.g., PSN_META_ACCESS_TOKEN > META_ACCESS_TOKEN).
+
 ### Type Checking
 ```bash
 mypy .
@@ -227,12 +231,18 @@ mypy .
 
 ## Configuration
 
-Create a `.env` file with your platform credentials:
+You can configure via environment variables or a `.env` file. Variables may be prefixed with `PSN_`.
+
+Recommended keys:
 ```env
 # Meta
-META_APP_ID=your_app_id
-META_APP_SECRET=your_app_secret
+PSN_META_ACCESS_TOKEN=your_access_token
+# Optionally non-prefixed for compatibility
 META_ACCESS_TOKEN=your_access_token
+
+# Project defaults (optional)
+PSN_GCP_PROJECT_ID=fleming-424413
+PSN_BQ_DATASET=paid_social
 
 # Reddit
 REDDIT_CLIENT_ID=your_client_id
