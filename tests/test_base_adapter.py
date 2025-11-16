@@ -1,8 +1,7 @@
 """Tests for base adapter interface."""
 
 import pytest
-from paid_social_nav.adapters.base import BaseAdapter, InsightRecord
-from paid_social_nav.core.enums import Entity
+from paid_social_nav.adapters.base import BaseAdapter
 
 
 def test_base_adapter_requires_base_url():
@@ -21,15 +20,12 @@ def test_base_adapter_requires_fetch_insights():
     """Test that BaseAdapter subclasses must implement fetch_insights."""
 
     # Test that abstract method prevents instantiation
-    try:
-        class MinimalAdapter(BaseAdapter):
-            BASE_URL = "https://example.com/api"
+    class MinimalAdapter(BaseAdapter):
+        BASE_URL = "https://example.com/api"
 
-        # This should fail because fetch_insights is not implemented
-        adapter = MinimalAdapter(access_token="test_token")
-        pytest.fail("Should not be able to instantiate adapter without fetch_insights")
-    except TypeError as e:
-        assert "abstract method fetch_insights" in str(e)
+    # This should fail because fetch_insights is not implemented
+    with pytest.raises(TypeError, match="abstract method fetch_insights"):
+        MinimalAdapter(access_token="test_token")
 
 
 def test_safe_int_helper():
