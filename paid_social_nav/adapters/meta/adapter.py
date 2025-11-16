@@ -1,32 +1,22 @@
+"""Meta (Facebook/Instagram/WhatsApp) platform adapter."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date
-from typing import Any
+import json
 from collections.abc import Iterable
+from datetime import date as _date
 
-from ...core.enums import DatePreset, Entity
+import requests
+
+from ..base import BaseAdapter, InsightRecord
+from ...core.enums import Entity, DatePreset
 from ...core.models import DateRange
 
 
-@dataclass
-class InsightRecord:
-    date: date
-    level: Entity
-    impressions: int
-    clicks: int
-    spend: float
-    conversions: float | int | None
-    ctr: float | None
-    frequency: float | None
-    raw: dict[str, Any] | None
+class MetaAdapter(BaseAdapter):
+    """Adapter for Meta Business API (Facebook, Instagram, WhatsApp ads)."""
 
-
-class MetaAdapter:
     BASE_URL = "https://graph.facebook.com/v18.0"
-
-    def __init__(self, access_token: str):
-        self.access_token = access_token
 
     def fetch_insights(
         self,
@@ -37,17 +27,10 @@ class MetaAdapter:
         date_preset: DatePreset | None = None,
         page_size: int = 500,
     ) -> Iterable[InsightRecord]:
-        """Yield InsightRecord objects from Meta Graph API.
+        """Fetch insights from Meta Graph API.
 
-        - level: ad|adset|campaign
-        - account_id: e.g., act_123 or numeric (but API expects act_123 style)
-        - date_range: explicit since/until dates for daily breakdown when provided
-        - date_preset: use Graph presets when provided (e.g., lifetime)
-        - page_size: page size for API pagination
+        See BaseAdapter.fetch_insights for full documentation.
         """
-        import json
-        from datetime import date as _date
-        import requests
 
         fields = [
             "date_start",
@@ -102,18 +85,6 @@ class MetaAdapter:
                 except Exception:
                     d = None
 
-                def _int(x: Any) -> int:
-                    try:
-                        return int(x)
-                    except Exception:
-                        return 0
-
-                def _float(x: Any) -> float | None:
-                    try:
-                        return float(x)
-                    except Exception:
-                        return None
-
                 # Sum all actions as a coarse conversions proxy (may be refined per rule)
                 actions = row.get("actions") or []
                 conv: float | int | None = None
@@ -133,12 +104,12 @@ class MetaAdapter:
                 yield InsightRecord(
                     date=d or _date.today(),
                     level=level,
-                    impressions=_int(row.get("impressions")),
-                    clicks=_int(row.get("clicks")),
+                    impressions=self._safe_int(row.get("impressions")),
+                    clicks=self._safe_int(row.get("clicks")),
                     spend=float(row.get("spend") or 0.0),
                     conversions=conv,
-                    ctr=_float(row.get("ctr")),
-                    frequency=_float(row.get("frequency")),
+                    ctr=self._safe_float(row.get("ctr")),
+                    frequency=self._safe_float(row.get("frequency")),
                     raw=row,
                 )
 
