@@ -56,4 +56,3 @@ SELECT
   SAFE_DIVIDE(video_impressions, NULLIF(impressions, 0)) AS video_share,
   SAFE_DIVIDE(image_impressions, NULLIF(impressions, 0)) AS image_share
 FROM rolled;
-

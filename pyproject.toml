@@ -8,6 +8,7 @@ dependencies = [
   "typer>=0.12",
   "PyYAML>=6.0",
   "google-cloud-bigquery>=3.11",
+  "requests>=2.31",
 ]
 
 [project.optional-dependencies]

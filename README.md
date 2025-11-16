@@ -168,15 +168,61 @@ psn meta sync-insights \
   --tenant fleming
 ```
 
-- Use explicit dates at the ad level (mutually exclusive with --date-preset):
+- Use explicit dates at the ad level (explicit dates take precedence over --date-preset):
 ```bash
 psn meta sync-insights \
   --account-id act_1234567890 \
   --level ad \
   --since 2025-09-01 \
   --until 2025-09-07 \
+  --date-preset last_7d \
   --tenant fleming
 ```
+
+- Run multiple levels in one command and disable fallback:
+```bash
+psn meta sync-insights \
+  --account-id act_1234567890 \
+  --levels ad,adset,campaign \
+  --no-fallback-levels \
+  --date-preset last_14d \
+  --tenant fleming
+```
+
+- Backfill a long range with chunking (ranges >60d are chunked into 30d windows by default):
+```bash
+psn meta sync-insights \
+  --account-id act_1234567890 \
+  --level ad \
+  --since 2024-01-01 \
+  --until 2024-12-31 \
+  --chunk-days 30 \
+  --tenant fleming
+```
+
+- Use the lifetime preset (adapter-native preset):
+```bash
+psn meta sync-insights \
+  --account-id act_1234567890 \
+  --level campaign \
+  --date-preset lifetime \
+  --tenant fleming
+```
+
+#### Tenant defaults
+Add a tenant default level in configs/tenants.yaml to avoid specifying --level each time:
+```yaml
+tenants:
+  fleming:
+    project_id: fleming-424413
+    dataset: paid_social
+    default_level: ad
+```
+The CLI resolves level in this order: --levels (if provided) > --level (if provided) > tenant default_level > ad.
+
+Env resolution precedence:
+- Process environment > `.env` values
+- PSN-prefixed keys are preferred when present, with non-prefixed fallbacks (e.g., PSN_META_ACCESS_TOKEN > META_ACCESS_TOKEN).
 
 ### Type Checking
 ```bash
@@ -185,12 +231,18 @@ mypy .
 
 ## Configuration
 
-Create a `.env` file with your platform credentials:
+You can configure via environment variables or a `.env` file. Variables may be prefixed with `PSN_`.
+
+Recommended keys:
 ```env
 # Meta
-META_APP_ID=your_app_id
-META_APP_SECRET=your_app_secret
+PSN_META_ACCESS_TOKEN=your_access_token
+# Optionally non-prefixed for compatibility
 META_ACCESS_TOKEN=your_access_token
+
+# Project defaults (optional)
+PSN_GCP_PROJECT_ID=fleming-424413
+PSN_BQ_DATASET=paid_social
 
 # Reddit
 REDDIT_CLIENT_ID=your_client_id

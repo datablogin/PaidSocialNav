@@ -259,4 +259,3 @@ if [ -n "$ORIGINAL_BRANCH" ] && [ "$ORIGINAL_BRANCH" != "$PR_BRANCH" ]; then
 fi
 
 echo -e "${BLUE}PaidSocialNav PR Review Script ready.${NC}"
-
