@@ -81,13 +81,33 @@ def ensure_insights_table(project_id: str, dataset: str) -> None:
     client.create_table(table, exists_ok=True)
 
 
-def _staging_table(project_id: str, dataset: str) -> str:
+def ensure_dim_ad_table(project_id: str, dataset: str) -> None:
+    """Ensure dim_ad dimension table exists with proper schema."""
+    client = bigquery.Client(project=project_id)
+    table_id = f"{project_id}.{dataset}.dim_ad"
+
+    schema = [
+        bigquery.SchemaField("ad_global_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("media_type", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("ad_name", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("creative_id", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("updated_at", "TIMESTAMP", mode="NULLABLE"),
+    ]
+
+    table = bigquery.Table(table_id, schema=schema)
+    client.create_table(table, exists_ok=True)
+
+
+def _staging_table(project_id: str, dataset: str, unique_id: str | None = None) -> str:
+    """Generate staging table name with optional unique ID to prevent race conditions."""
+    if unique_id:
+        return f"{project_id}.{dataset}.__stg_{INSIGHTS_TABLE}_{unique_id}"
     return f"{project_id}.{dataset}.__stg_{INSIGHTS_TABLE}"
 
 
-def _ensure_staging_table(project_id: str, dataset: str) -> None:
+def _create_staging_table(project_id: str, dataset: str, table_id: str) -> None:
+    """Create a staging table with the insights schema."""
     client = bigquery.Client(project=project_id)
-    table_id = _staging_table(project_id, dataset)
     schema = [
         bigquery.SchemaField("date", "DATE"),
         bigquery.SchemaField("level", "STRING"),
@@ -113,49 +133,57 @@ def load_json_rows(
     """Stage rows and merge into the destination table to avoid duplicates."""
     if not rows:
         return
+
+    import json
+    import uuid
+    from io import BytesIO
+
     client = bigquery.Client(project=project_id)
 
     ensure_insights_table(project_id, dataset)
-    _ensure_staging_table(project_id, dataset)
 
-    # Load to staging
-    job_config = bigquery.LoadJobConfig()
-    job_config.source_format = bigquery.SourceFormat.NEWLINE_DELIMITED_JSON
-    stg_table = _staging_table(project_id, dataset)
-    # Use a temporary in-memory file by converting to newline-delimited JSON strings
-    import json
-    from io import BytesIO
+    # Use unique staging table name to prevent race conditions
+    unique_id = uuid.uuid4().hex[:8]
+    stg_table = _staging_table(project_id, dataset, unique_id=unique_id)
 
-    buf = BytesIO()
-    for r in rows:
-        buf.write((json.dumps(r) + "\n").encode("utf-8"))
-    buf.seek(0)
+    try:
+        # Create temporary staging table
+        _create_staging_table(project_id, dataset, stg_table)
 
-    load_job = client.load_table_from_file(buf, stg_table, job_config=job_config)
-    load_job.result()
+        # Load to staging
+        job_config = bigquery.LoadJobConfig()
+        job_config.source_format = bigquery.SourceFormat.NEWLINE_DELIMITED_JSON
 
-    # Merge into destination
-    dest = f"{project_id}.{dataset}.{table}"
-    merge_sql = f"""
-    MERGE `{dest}` T
-    USING `{stg_table}` S
-    ON T.date = S.date
-       AND T.level = S.level
-       AND IFNULL(T.account_global_id, '') = IFNULL(S.account_global_id, '')
-       AND IFNULL(T.campaign_global_id, '') = IFNULL(S.campaign_global_id, '')
-       AND IFNULL(T.adset_global_id, '') = IFNULL(S.adset_global_id, '')
-       AND IFNULL(T.ad_global_id, '') = IFNULL(S.ad_global_id, '')
-    WHEN MATCHED THEN UPDATE SET
-      impressions = S.impressions,
-      clicks = S.clicks,
-      spend = S.spend,
-      conversions = S.conversions,
-      ctr = S.ctr,
-      frequency = S.frequency,
-      raw_metrics = S.raw_metrics
-    WHEN NOT MATCHED THEN INSERT ROW
-    """
-    client.query(merge_sql).result()
+        buf = BytesIO()
+        for r in rows:
+            buf.write((json.dumps(r) + "\n").encode("utf-8"))
+        buf.seek(0)
 
-    # Clean staging (optional: truncate)
-    client.query(f"TRUNCATE TABLE `{stg_table}`").result()
+        load_job = client.load_table_from_file(buf, stg_table, job_config=job_config)
+        load_job.result()
+
+        # Merge into destination
+        dest = f"{project_id}.{dataset}.{table}"
+        merge_sql = f"""
+        MERGE `{dest}` T
+        USING `{stg_table}` S
+        ON T.date = S.date
+           AND T.level = S.level
+           AND IFNULL(T.account_global_id, '') = IFNULL(S.account_global_id, '')
+           AND IFNULL(T.campaign_global_id, '') = IFNULL(S.campaign_global_id, '')
+           AND IFNULL(T.adset_global_id, '') = IFNULL(S.adset_global_id, '')
+           AND IFNULL(T.ad_global_id, '') = IFNULL(S.ad_global_id, '')
+        WHEN MATCHED THEN UPDATE SET
+          impressions = S.impressions,
+          clicks = S.clicks,
+          spend = S.spend,
+          conversions = S.conversions,
+          ctr = S.ctr,
+          frequency = S.frequency,
+          raw_metrics = S.raw_metrics
+        WHEN NOT MATCHED THEN INSERT ROW
+        """
+        client.query(merge_sql).result()
+    finally:
+        # Clean up staging table
+        client.delete_table(stg_table, not_found_ok=True)

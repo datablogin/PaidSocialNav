@@ -12,6 +12,7 @@ from ..core.models import DateRange
 from ..storage.bq import (
     INSIGHTS_TABLE,
     ensure_dataset,
+    ensure_dim_ad_table,
     ensure_insights_table,
     load_json_rows,
 )
@@ -125,6 +126,7 @@ def sync_meta_insights(
     # Ensure BQ dataset/table
     ensure_dataset(project_id, dataset)
     ensure_insights_table(project_id, dataset)
+    ensure_dim_ad_table(project_id, dataset)
 
     def _fetch_and_load(run_level: Entity, dr: DateRange | None) -> int:
         rows: list[dict[str, Any]] = []
@@ -208,11 +210,23 @@ def sync_meta_insights(
                         loaded_count += len(rows)
                         rows.clear()
                     break
-                except Exception:
+                except Exception as e:
                     attempt += 1
+                    # Log error details before retry
+                    error_msg = (
+                        f"Chunk load failed (attempt {attempt}/{retries}): "
+                        f"{type(e).__name__}: {str(e)}"
+                    )
                     if attempt > retries:
+                        print(f"ERROR: {error_msg} - Max retries exceeded", file=__import__('sys').stderr)
                         raise
-                    sleep(retry_backoff)
+                    # Exponential backoff
+                    backoff_time = retry_backoff * (2 ** (attempt - 1))
+                    print(
+                        f"WARNING: {error_msg} - Retrying in {backoff_time:.1f}s",
+                        file=__import__('sys').stderr
+                    )
+                    sleep(backoff_time)
         return loaded_count  # loading happens incrementally
 
     # Orchestrate levels
@@ -230,11 +244,13 @@ def sync_meta_insights(
     total = 0
     while True:
         tried_levels.append(current_level)
-        total += _fetch_and_load(current_level, resolved.date_range)
-        # We can't easily detect 0 rows without adapter feedback; as a proxy, we will not fallback when using preset lifetime/multi-chunk
-        # For deterministic fallback, this would ideally rely on adapter returning counts; left as future enhancement.
-        if not fallback_levels:
+        rows_loaded = _fetch_and_load(current_level, resolved.date_range)
+        total += rows_loaded
+
+        # Stop if fallback disabled or we got data
+        if not fallback_levels or rows_loaded > 0:
             break
+
         # If fallback is enabled, attempt next level only if not already tried all
         next_index = (
             FALLBACK_ORDER.index(current_level) + 1
@@ -243,7 +259,6 @@ def sync_meta_insights(
         )
         if next_index >= len(FALLBACK_ORDER):
             break
-        # In absence of precise counts, still proceed to next fallback level only if previous was AD or ADSET
         current_level = FALLBACK_ORDER[next_index]
 
     return {"rows": total, "table": f"{project_id}.{dataset}.{INSIGHTS_TABLE}"}
