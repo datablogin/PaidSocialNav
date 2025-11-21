@@ -9,6 +9,8 @@ dependencies = [
   "PyYAML>=6.0",
   "google-cloud-bigquery>=3.11",
   "requests>=2.31",
+  "python-json-logger>=2.0.7",
+  "jinja2>=3.1.0",
 ]
 
 [project.optional-dependencies]
@@ -31,6 +33,9 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["paid_social_nav*"]
 exclude = ["tests*", "sql*", "infra*", "configs*"]
+
+[tool.setuptools.package-data]
+"paid_social_nav.render" = ["templates/*.j2"]
 
 [tool.ruff]
 line-length = 88
