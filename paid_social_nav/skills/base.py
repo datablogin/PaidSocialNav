@@ -11,7 +11,6 @@ class SkillResult:
     success: bool
     data: dict[str, Any]
     message: str
-    next_step: str | None = None
 
 
 class BaseSkill(ABC):

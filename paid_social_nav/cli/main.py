@@ -357,7 +357,7 @@ def run_audit_skill(
 
     if result.success:
         typer.secho(f"✅ {result.message}", fg=typer.colors.GREEN)
-        typer.echo(f"\nReports generated:")
+        typer.echo("\nReports generated:")
         typer.echo(f"  Markdown: {result.data['markdown_report']}")
         typer.echo(f"  HTML: {result.data['html_report']}")
     else:

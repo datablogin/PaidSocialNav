@@ -1,0 +1,6 @@
+ad_global_id,media_type,ad_name,creative_id
+meta:ad:120216654363600515_001,video,Summer Campaign Video Ad,cr_video_001
+meta:ad:120216654363600515_002,image,Summer Campaign Image Ad,cr_image_001
+meta:ad:120216647185900515_001,video,Fall Campaign Video Ad,cr_video_002
+meta:ad:120216647185900515_002,image,Fall Campaign Image Ad,cr_image_002
+meta:ad:120216647185900515_003,carousel,Fall Campaign Carousel Ad,cr_carousel_001
