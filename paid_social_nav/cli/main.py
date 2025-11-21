@@ -8,12 +8,25 @@ from .. import __version__
 from ..audit.engine import run_audit
 from ..core.config import get_settings
 from ..core.enums import DatePreset, Entity
+from ..core.logging_config import get_logger, setup_logging
 from ..core.sync import sync_meta_insights
-from ..render.renderer import render_markdown, write_text
+from ..render.renderer import write_text
 
 app = typer.Typer(help="PaidSocialNav CLI")
 meta_app = typer.Typer(help="Meta platform commands")
 audit_app = typer.Typer(help="Audit and reporting commands")
+
+logger = get_logger(__name__)
+
+
+@app.callback()
+def callback(
+    json_logs: bool = typer.Option(False, "--json-logs", help="Output logs in JSON format"),
+    log_level: str = typer.Option("INFO", "--log-level", help="Logging level (DEBUG, INFO, WARNING, ERROR)"),
+) -> None:
+    """Configure global CLI options."""
+    setup_logging(json_output=json_logs, log_level=log_level)
+    logger.debug("CLI initialized", extra={"json_logs": json_logs, "log_level": log_level})
 
 
 @app.command()
@@ -81,6 +94,13 @@ def meta_sync_insights(
     ),  # noqa: B008
     secret_version: str = typer.Option(
         "latest", help="Secret version (default: latest)"
+    ),  # noqa: B008
+    breakdowns: str | None = typer.Option(
+        None,
+        help=(
+            "Comma-separated demographic/geographic breakdowns (e.g., 'age,gender' or 'region'). "
+            "Supported: age, gender, region, country, publisher_platform, device_platform, placement"
+        ),
     ),  # noqa: B008
 ) -> None:
     """Fetch Meta insights via Graph API and load into BigQuery.
@@ -183,6 +203,15 @@ def meta_sync_insights(
     # Determine effective single-level if --levels not provided
     effective_level = level or tenant_default_level or Entity.AD
 
+    # Parse breakdowns if provided
+    breakdown_list = None
+    if breakdowns:
+        breakdown_list = [b.strip() for b in breakdowns.split(",")]
+        typer.secho(
+            f"Requesting demographic breakdowns: {', '.join(breakdown_list)}",
+            fg=typer.colors.YELLOW
+        )
+
     try:
         summary = sync_meta_insights(
             account_id=account_id,
@@ -200,6 +229,7 @@ def meta_sync_insights(
             retry_backoff=retry_backoff_seconds,
             rate_limit_rps=rate_limit_rps,
             page_size=page_size,
+            breakdowns=breakdown_list,
         )
     except Exception as e:
         typer.secho(f"Sync failed: {e}", fg=typer.colors.RED)
@@ -220,38 +250,31 @@ def audit_run(
         None, help="Optional output path for Markdown report"
     ),
 ) -> None:
-    """Run audit and optionally render a Markdown report (scaffold)."""
+    """Run audit and optionally render a Markdown report."""
+    from datetime import datetime
+
+    import yaml
+
+    from ..render.renderer import ReportRenderer
+
     result = run_audit(config)
 
-    # Minimal data mapping for the template
+    # Load tenant name from config
+    cfg = yaml.safe_load(Path(config).read_text())
+    tenant_name = cfg.get("tenant", "Client")
+
+    # Prepare data for template
     data = {
-        "client": "ACME Retail",
-        "period": "Q2 2025",
-        "auditor": "PaidSocialNav",
+        "tenant_name": tenant_name,
+        "period": "2025",
+        "audit_date": datetime.now().strftime("%Y-%m-%d"),
         "overall_score": result.overall_score,
-        "strengths": "Strong Instagram engagement; robust retargeting.",
-        "weaknesses": "Signal quality; over-skewed to retargeting; limited creative diversity.",
-        "opportunities": "Improve CAPI, rebalance spend, refresh creative, test TikTok.",
-        "profiles_audited": ["Meta (FB+IG)"],
-        "actions": {
-            "account_access": "Standardize naming; clean up users.",
-            "organic": "Align paid audiences.",
-            "structure": "Reallocate to 60/40 and add awareness.",
-            "creative": "Increase video share; rotate bi-weekly.",
-            "audience": "Add 1–2% LALs; refine exclusions.",
-            "tracking": "Implement CAPI; configure full-funnel events.",
-            "performance": "Scale winners; pause underperformers.",
-            "compliance": "Update consent; set rejection alerts.",
-        },
-        "roadmap": {
-            "quick_wins": "- Fix EMQ with CAPI\n- Standardize naming & access\n- Launch video tests",
-            "medium_term": "- Rebalance to 60/40\n- Deploy LAL audiences\n- Refresh creative bi-weekly",
-            "long_term": "- Test TikTok prospecting\n- Integrate CRM\n- Automate reporting",
-        },
+        "rules": result.rules,
+        "recommendations": [],  # Phase 4 will populate with AI insights
     }
 
-    tmpl_dir = Path(__file__).resolve().parent.parent / "render" / "templates"
-    md = render_markdown(tmpl_dir, data)
+    renderer = ReportRenderer()
+    md = renderer.render_markdown(data)
 
     if output:
         write_text(output, md)
