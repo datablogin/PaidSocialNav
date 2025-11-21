@@ -249,8 +249,11 @@ def audit_run(
     output: str | None = typer.Option(
         None, help="Optional output path for Markdown report"
     ),
+    html_output: str | None = typer.Option(
+        None, help="Optional output path for HTML report"
+    ),
 ) -> None:
-    """Run audit and optionally render a Markdown report."""
+    """Run audit and optionally render Markdown and/or HTML reports."""
     from datetime import datetime
 
     import yaml
@@ -308,12 +311,22 @@ def audit_run(
     }
 
     renderer = ReportRenderer()
-    md = renderer.render_markdown(data)
 
+    # Generate Markdown if requested
     if output:
+        md = renderer.render_markdown(data)
         write_text(output, md)
-        typer.echo(f"Report written to {output}")
-    else:
+        typer.echo(f"Markdown report written to {output}")
+
+    # Generate HTML if requested
+    if html_output:
+        html = renderer.render_html(data)
+        write_text(html_output, html)
+        typer.echo(f"HTML report written to {html_output}")
+
+    # If neither specified, output Markdown to console
+    if not output and not html_output:
+        md = renderer.render_markdown(data)
         typer.echo(md)
 
 
