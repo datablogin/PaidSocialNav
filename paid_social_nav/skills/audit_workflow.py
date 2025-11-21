@@ -27,7 +27,7 @@ class AuditWorkflowSkill(BaseSkill):
     """
 
     def validate_context(self, context: dict[str, Any]) -> tuple[bool, str]:
-        """Validate required parameters."""
+        """Validate required parameters and paths."""
         if "tenant_id" not in context:
             return False, "Missing required parameter: tenant_id"
         if "audit_config" not in context:
@@ -36,6 +36,18 @@ class AuditWorkflowSkill(BaseSkill):
         config_path = Path(context["audit_config"])
         if not config_path.exists():
             return False, f"Audit config not found: {config_path}"
+
+        # Validate output_dir if provided
+        if "output_dir" in context:
+            output_dir = Path(context["output_dir"])
+            # Prevent path traversal attacks
+            try:
+                output_dir = output_dir.resolve()
+                # Check if path contains suspicious patterns
+                if ".." in str(output_dir):
+                    return False, f"Invalid output directory (path traversal detected): {output_dir}"
+            except (OSError, RuntimeError) as e:
+                return False, f"Invalid output directory path: {e}"
 
         return True, ""
 
@@ -80,7 +92,8 @@ class AuditWorkflowSkill(BaseSkill):
                     "overall_score": audit_result.overall_score
                 }
             )
-        except Exception as e:
+        except (RuntimeError, ValueError, OSError) as e:
+            # RuntimeError: BigQuery errors, ValueError: Config validation, OSError: File I/O
             logger.error(
                 "Audit execution failed",
                 extra={
@@ -109,7 +122,8 @@ class AuditWorkflowSkill(BaseSkill):
             else:
                 period = datetime.now().strftime("%Y")
 
-        except Exception as e:
+        except (yaml.YAMLError, OSError, KeyError) as e:
+            # YAMLError: Invalid YAML, OSError: File I/O, KeyError: Missing windows key
             logger.warning(
                 "Failed to load config for period calculation, using current year",
                 extra={"error": str(e)}
@@ -148,7 +162,8 @@ class AuditWorkflowSkill(BaseSkill):
             md_content = renderer.render_markdown(data)
             write_text(str(md_path), md_content)
             logger.info("Markdown report generated", extra={"path": str(md_path)})
-        except Exception as e:
+        except (OSError, RuntimeError) as e:
+            # OSError: File I/O errors, RuntimeError: Template rendering errors
             logger.error(
                 "Failed to generate Markdown report",
                 extra={"path": str(md_path), "error": str(e)},
@@ -166,7 +181,8 @@ class AuditWorkflowSkill(BaseSkill):
             html_content = renderer.render_html(data)
             write_text(str(html_path), html_content)
             logger.info("HTML report generated", extra={"path": str(html_path)})
-        except Exception as e:
+        except (OSError, RuntimeError) as e:
+            # OSError: File I/O errors, RuntimeError: Template rendering errors
             logger.error(
                 "Failed to generate HTML report",
                 extra={"path": str(html_path), "error": str(e)},

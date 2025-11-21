@@ -21,10 +21,32 @@ class BaseSkill(ABC):
         """Execute the skill workflow.
 
         Args:
-            context: Input parameters and configuration
+            context: Input parameters dictionary. Required keys depend on
+                the skill implementation. Common keys:
+                - tenant_id (str): Tenant identifier
+                - audit_config (str): Path to audit configuration file
+                - output_dir (str, optional): Path for output files
 
         Returns:
-            SkillResult with success status and output data
+            SkillResult with:
+                - success (bool): Whether execution succeeded
+                - data (dict): Skill-specific output data
+                - message (str): Human-readable status message
+
+        Raises:
+            ValueError: If context validation fails
+            RuntimeError: If skill execution encounters an error
+
+        Example:
+            >>> skill = AuditWorkflowSkill()
+            >>> result = skill.execute({
+            ...     "tenant_id": "acme",
+            ...     "audit_config": "configs/audit_acme.yaml",
+            ...     "output_dir": "reports/"
+            ... })
+            >>> if result.success:
+            ...     print(f"Success: {result.message}")
+            ...     print(f"Report: {result.data['markdown_report']}")
         """
         pass
 
