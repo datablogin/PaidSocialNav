@@ -3,9 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 
 from .. import __version__
+from ..core.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class ReportRenderer:
@@ -16,20 +19,66 @@ class ReportRenderer:
             templates_dir = Path(__file__).parent / "templates"
         self.env = Environment(
             loader=FileSystemLoader(str(templates_dir)),
-            autoescape=False,  # We're generating Markdown, not HTML
+            autoescape=False,  # Disabled for Markdown; HTML template handles escaping in Jinja2
             trim_blocks=True,
             lstrip_blocks=True,
         )
 
     def render_markdown(self, data: dict[str, Any]) -> str:
-        """Render Markdown report from audit data."""
-        template = self.env.get_template("audit_report.md.j2")
-        return template.render(**data, version=__version__)
+        """Render Markdown report from audit data.
+
+        Args:
+            data: Dictionary containing report data with required keys:
+                  tenant_name, period, audit_date, overall_score, rules, recommendations
+
+        Returns:
+            Rendered Markdown string
+
+        Raises:
+            TemplateNotFound: If the Markdown template is missing
+            RuntimeError: If template rendering fails
+        """
+        try:
+            template = self.env.get_template("audit_report.md.j2")
+            logger.debug("Rendering Markdown report", extra={"tenant": data.get("tenant_name")})
+            return template.render(**data, version=__version__)
+        except TemplateNotFound as e:
+            logger.error("Markdown template not found", extra={"error": str(e)})
+            raise RuntimeError(
+                f"Markdown template not found: {e}. "
+                "Ensure paid_social_nav/render/templates/audit_report.md.j2 exists."
+            ) from e
+        except Exception as e:
+            logger.error("Failed to render Markdown report", extra={"error": str(e)})
+            raise RuntimeError(f"Failed to render Markdown report: {e}") from e
 
     def render_html(self, data: dict[str, Any]) -> str:
-        """Render HTML report from audit data."""
-        template = self.env.get_template("audit_report.html.j2")
-        return template.render(**data, version=__version__)
+        """Render HTML report from audit data.
+
+        Args:
+            data: Dictionary containing report data with required keys:
+                  tenant_name, period, audit_date, overall_score, rules, recommendations
+
+        Returns:
+            Rendered HTML string with embedded Chart.js visualizations
+
+        Raises:
+            TemplateNotFound: If the HTML template is missing
+            RuntimeError: If template rendering fails
+        """
+        try:
+            template = self.env.get_template("audit_report.html.j2")
+            logger.debug("Rendering HTML report", extra={"tenant": data.get("tenant_name")})
+            return template.render(**data, version=__version__)
+        except TemplateNotFound as e:
+            logger.error("HTML template not found", extra={"error": str(e)})
+            raise RuntimeError(
+                f"HTML template not found: {e}. "
+                "Ensure paid_social_nav/render/templates/audit_report.html.j2 exists."
+            ) from e
+        except Exception as e:
+            logger.error("Failed to render HTML report", extra={"error": str(e)})
+            raise RuntimeError(f"Failed to render HTML report: {e}") from e
 
 
 def render_markdown(templates_dir: Path, data: dict) -> str:
