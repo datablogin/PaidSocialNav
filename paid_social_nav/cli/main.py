@@ -11,10 +11,12 @@ from ..core.enums import DatePreset, Entity
 from ..core.logging_config import get_logger, setup_logging
 from ..core.sync import sync_meta_insights
 from ..render.renderer import write_text
+from ..skills.audit_workflow import AuditWorkflowSkill
 
 app = typer.Typer(help="PaidSocialNav CLI")
 meta_app = typer.Typer(help="Meta platform commands")
 audit_app = typer.Typer(help="Audit and reporting commands")
+skills_app = typer.Typer(help="Claude skills automation workflows")
 
 logger = get_logger(__name__)
 
@@ -229,7 +231,6 @@ def meta_sync_insights(
             retry_backoff=retry_backoff_seconds,
             rate_limit_rps=rate_limit_rps,
             page_size=page_size,
-            breakdowns=breakdown_list,
         )
     except Exception as e:
         typer.secho(f"Sync failed: {e}", fg=typer.colors.RED)
@@ -330,5 +331,40 @@ def audit_run(
         typer.echo(md)
 
 
+@skills_app.command("audit")
+def run_audit_skill(
+    tenant_id: str = typer.Option(..., help="Tenant identifier from configs/tenants.yaml"),
+    audit_config: str = typer.Option(..., help="Path to audit YAML config"),
+    output_dir: str = typer.Option("reports/", help="Output directory for reports"),
+) -> None:
+    """Run complete audit workflow using Claude skills orchestration.
+
+    This command orchestrates the entire audit process:
+    - Validates tenant configuration
+    - Runs audit analysis with weighted scoring
+    - Generates professional Markdown and HTML reports
+    - Saves all outputs to the specified directory
+
+    Example:
+        psn skills audit --tenant-id puttery --audit-config configs/audit_puttery.yaml
+    """
+    skill = AuditWorkflowSkill()
+    result = skill.execute({
+        "tenant_id": tenant_id,
+        "audit_config": audit_config,
+        "output_dir": output_dir,
+    })
+
+    if result.success:
+        typer.secho(f"✅ {result.message}", fg=typer.colors.GREEN)
+        typer.echo("\nReports generated:")
+        typer.echo(f"  Markdown: {result.data['markdown_report']}")
+        typer.echo(f"  HTML: {result.data['html_report']}")
+    else:
+        typer.secho(f"❌ {result.message}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+
 app.add_typer(meta_app, name="meta")
 app.add_typer(audit_app, name="audit")
+app.add_typer(skills_app, name="skills")

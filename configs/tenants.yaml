@@ -3,3 +3,7 @@ tenants:
     project_id: fleming-424413
     dataset: paid_social
     default_level: ad
+  puttery:
+    project_id: puttery-golf-001
+    dataset: paid_social
+    default_level: campaign

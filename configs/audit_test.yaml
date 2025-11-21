@@ -1,0 +1,13 @@
+project: puttery-golf-001
+dataset: paid_social
+tenant: test
+level: campaign
+windows:
+  - Q2
+top_n: 2
+
+weights:
+  budget_concentration: 1.0
+
+thresholds:
+  max_topn_share: 0.7

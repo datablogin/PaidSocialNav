@@ -1,0 +1,13 @@
+project: puttery-golf-001
+dataset: paid_social
+tenant: test
+level: campaign
+windows:
+  - Q2
+
+weights:
+  creative_diversity: 1.0
+
+thresholds:
+  min_video_share: 0.2
+  min_image_share: 0.2

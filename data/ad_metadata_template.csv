@@ -1,0 +1,3 @@
+ad_global_id,media_type,ad_name,creative_id
+meta:ad:EXAMPLE_ID,video,Example Video Ad,cr_example1
+meta:ad:EXAMPLE_ID2,image,Example Image Ad,cr_example2

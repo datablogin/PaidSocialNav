@@ -13,6 +13,9 @@ dependencies = [
   "jinja2>=3.1.0",
 ]
 
+[project.scripts]
+psn = "paid_social_nav.cli.main:app"
+
 [project.optional-dependencies]
 test = [
     "pytest>=7.0",
