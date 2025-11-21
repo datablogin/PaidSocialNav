@@ -30,11 +30,16 @@ class ReportRenderer:
         """Render HTML report from audit data.
 
         Note: HTML template will be available in Phase 2.
+
+        Raises:
+            NotImplementedError: HTML template not available in Phase 1.
         """
+        from jinja2.exceptions import TemplateNotFound
+
         try:
             template = self.env.get_template("audit_report.html.j2")
             return template.render(**data, version=__version__)
-        except Exception as e:
+        except TemplateNotFound as e:
             raise NotImplementedError(
                 "HTML template not available in Phase 1. "
                 "Use render_markdown() for Markdown reports. "

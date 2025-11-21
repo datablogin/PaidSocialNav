@@ -257,7 +257,21 @@ def audit_run(
 
     from ..render.renderer import ReportRenderer
 
-    result = run_audit(config)
+    # Run audit with error handling
+    try:
+        result = run_audit(config)
+    except RuntimeError as e:
+        # BigQuery or other runtime errors
+        typer.secho(f"Audit failed: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from None
+    except Exception as e:
+        # Unexpected errors
+        typer.secho(
+            f"Unexpected error during audit: {e}",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1) from None
 
     # Load tenant name and windows from config
     try:
@@ -273,8 +287,13 @@ def audit_run(
     windows = cfg.get("windows", [])
 
     # Calculate period from windows
-    if windows:
-        period = ", ".join(windows) if len(windows) > 1 else windows[0]
+    if windows and isinstance(windows, list) and len(windows) > 0:
+        # Filter out any None or empty string values
+        valid_windows = [w for w in windows if w]
+        if valid_windows:
+            period = ", ".join(str(w) for w in valid_windows)
+        else:
+            period = datetime.now().strftime("%Y")
     else:
         period = datetime.now().strftime("%Y")
 
