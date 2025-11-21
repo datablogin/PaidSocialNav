@@ -458,10 +458,10 @@ def audit_run(
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] HTML template validates: No Jinja2 syntax errors
-- [ ] Linting passes: `ruff check paid_social_nav/`
-- [ ] Type checking passes: `mypy paid_social_nav/cli/main.py`
-- [ ] HTML report generates: `psn audit run --config configs/audit_test.yaml --html-output reports/test.html`
+- [x] HTML template validates: No Jinja2 syntax errors
+- [x] Linting passes: `ruff check paid_social_nav/`
+- [x] Type checking passes: `mypy paid_social_nav/cli/main.py`
+- [x] HTML report generates: `psn audit run --config configs/audit_test.yaml --html-output reports/test.html`
 
 #### Manual Verification:
 - [ ] HTML report opens in browser without errors
