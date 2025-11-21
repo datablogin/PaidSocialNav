@@ -17,9 +17,10 @@ class ReportRenderer:
     def __init__(self, templates_dir: Path | None = None):
         if templates_dir is None:
             templates_dir = Path(__file__).parent / "templates"
+        # Use select_autoescape to automatically escape HTML but not Markdown
         self.env = Environment(
             loader=FileSystemLoader(str(templates_dir)),
-            autoescape=False,  # Disabled for Markdown; HTML template handles escaping in Jinja2
+            autoescape=lambda name: name is not None and name.endswith('.html.j2'),
             trim_blocks=True,
             lstrip_blocks=True,
         )

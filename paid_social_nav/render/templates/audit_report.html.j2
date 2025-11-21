@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ tenant_name }} - Audit Report</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
+            integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g"
+            crossorigin="anonymous"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -78,16 +80,20 @@
     </div>
 
     <script>
+        // Chart data prepared server-side to prevent XSS
+        const chartData = {
+            labels: {{ rules | map(attribute='rule') | map('replace', '_', ' ') | map('title') | list | tojson }},
+            scores: {{ rules | map(attribute='score') | list | tojson }}
+        };
+
         const ctx = document.getElementById('scoreChart');
         new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: [
-                    {% for rule in rules %}'{{ rule.rule|replace("_", " ")|title }}'{% if not loop.last %},{% endif %}{% endfor %}
-                ],
+                labels: chartData.labels,
                 datasets: [{
                     label: 'Score',
-                    data: [{% for rule in rules %}{{ rule.score }}{% if not loop.last %},{% endif %}{% endfor %}],
+                    data: chartData.scores,
                     backgroundColor: 'rgba(102, 126, 234, 0.8)',
                     borderColor: 'rgba(102, 126, 234, 1)',
                     borderWidth: 1

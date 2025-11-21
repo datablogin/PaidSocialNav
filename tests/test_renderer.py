@@ -223,3 +223,78 @@ def test_write_text_overwrites_existing() -> None:
         # Overwrite with new content
         write_text(str(test_path), "New content")
         assert test_path.read_text(encoding="utf-8") == "New content"
+
+
+def test_html_xss_protection() -> None:
+    """Test that HTML template properly escapes potentially malicious content."""
+    renderer = ReportRenderer()
+
+    # Data with XSS attack vectors
+    data = {
+        "tenant_name": "<script>alert('XSS')</script>",
+        "period": "<img src=x onerror=alert('XSS')>",
+        "audit_date": "2025-11-20",
+        "overall_score": 75,
+        "rules": [
+            {
+                "rule": "test_rule<script>alert('XSS')</script>",
+                "window": "30d",
+                "level": "campaign",
+                "score": 85,
+                "findings": "<script>alert('XSS')</script>"
+            }
+        ],
+        "recommendations": [],
+    }
+
+    result = renderer.render_html(data)
+
+    # Verify that dangerous characters are escaped
+    assert "<script>alert('XSS')</script>" not in result
+    assert "&lt;script&gt;" in result or "\\u003c" in result  # JSON or HTML escaped
+    assert "&lt;img" in result or "\\u003c" in result
+
+    # Verify the document still has valid structure
+    assert "<!DOCTYPE html>" in result
+    assert "<html" in result
+
+
+def test_html_sri_integrity() -> None:
+    """Test that external scripts use SRI for security."""
+    renderer = ReportRenderer()
+    data = {
+        "tenant_name": "test",
+        "period": "2025",
+        "audit_date": "2025-11-20",
+        "overall_score": 75,
+        "rules": [],
+        "recommendations": [],
+    }
+
+    result = renderer.render_html(data)
+
+    # Verify Chart.js has integrity and crossorigin attributes
+    assert "integrity=" in result
+    assert "crossorigin=" in result
+    assert "sha384-" in result
+
+
+def test_markdown_no_escape() -> None:
+    """Test that Markdown template does not escape HTML entities."""
+    renderer = ReportRenderer()
+
+    # Markdown can contain HTML-like syntax that shouldn't be escaped
+    data = {
+        "tenant_name": "Test <Company>",
+        "period": "2025",
+        "audit_date": "2025-11-20",
+        "overall_score": 75,
+        "rules": [],
+        "recommendations": [],
+    }
+
+    result = renderer.render_markdown(data)
+
+    # In Markdown, we want the raw content (no HTML escaping)
+    assert "Test <Company>" in result
+    assert "&lt;" not in result  # Should NOT be HTML-escaped
