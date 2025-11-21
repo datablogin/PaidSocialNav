@@ -79,6 +79,83 @@
         </div>
     </div>
 
+    {% if strengths or issues %}
+    <div class="card">
+        <h2>Strategic Insights</h2>
+
+        {% if strengths %}
+        <h3>Strengths</h3>
+        <ul>
+        {% for strength in strengths %}
+            <li><strong>{{ strength.title }}:</strong> {{ strength.description }}</li>
+        {% endfor %}
+        </ul>
+        {% endif %}
+
+        {% if issues %}
+        <h3>Critical Issues</h3>
+        <ul>
+        {% for issue in issues %}
+            <li><strong>{{ issue.title }}</strong> ({{ issue.severity|upper }}): {{ issue.description }}</li>
+        {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if recommendations %}
+    <div class="card">
+        <h2>Recommendations</h2>
+        {% for rec in recommendations %}
+        <div style="margin-bottom: 20px;">
+            <h3>{{ loop.index }}. {{ rec.title }}</h3>
+            <p><strong>What to do:</strong> {{ rec.description }}</p>
+            <p><strong>Expected impact:</strong> {{ rec.expected_impact }}</p>
+            <p><strong>Effort required:</strong> {{ rec.effort|title }}</p>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if quick_wins %}
+    <div class="card">
+        <h2>Quick Wins</h2>
+        <p>These actions can be implemented immediately for fast results:</p>
+        <ul>
+        {% for win in quick_wins %}
+            <li><strong>{{ win.action }}:</strong> {{ win.expected_result }}</li>
+        {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if roadmap %}
+    <div class="card">
+        <h2>90-Day Roadmap</h2>
+
+        <h3>Phase 1: Days 1-30</h3>
+        <ul>
+        {% for action in roadmap.phase_1_30_days %}
+            <li>{{ action }}</li>
+        {% endfor %}
+        </ul>
+
+        <h3>Phase 2: Days 31-60</h3>
+        <ul>
+        {% for action in roadmap.phase_2_60_days %}
+            <li>{{ action }}</li>
+        {% endfor %}
+        </ul>
+
+        <h3>Phase 3: Days 61-90</h3>
+        <ul>
+        {% for action in roadmap.phase_3_90_days %}
+            <li>{{ action }}</li>
+        {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
     <script>
         // Chart data prepared server-side to prevent XSS
         const chartData = {

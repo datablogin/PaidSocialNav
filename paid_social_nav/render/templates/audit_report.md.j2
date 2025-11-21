@@ -40,11 +40,71 @@
 
 ---
 
+## Strategic Insights
+
+{% if strengths %}
+### Strengths
+
+{% for strength in strengths %}
+{{ loop.index }}. **{{ strength.title }}**: {{ strength.description }}
+{% endfor %}
+{% endif %}
+
+{% if issues %}
+### Critical Issues
+
+{% for issue in issues %}
+{{ loop.index }}. **{{ issue.title }}** ({{ issue.severity|upper }}): {{ issue.description }}
+{% endfor %}
+{% endif %}
+
+---
+
 ## Recommendations
 
 {% if recommendations %}
 {% for rec in recommendations %}
-{{ loop.index }}. **{{ rec.title }}**: {{ rec.description }}
+### {{ loop.index }}. {{ rec.title }}
+
+**What to do**: {{ rec.description }}
+
+**Expected impact**: {{ rec.expected_impact }}
+
+**Effort required**: {{ rec.effort|title }}
+
+{% endfor %}
+{% endif %}
+
+---
+
+## Quick Wins
+
+{% if quick_wins %}
+These actions can be implemented immediately for fast results:
+
+{% for win in quick_wins %}
+- **{{ win.action }}**: {{ win.expected_result }}
+{% endfor %}
+{% endif %}
+
+---
+
+## 90-Day Roadmap
+
+{% if roadmap %}
+### Phase 1: Days 1-30
+{% for action in roadmap.phase_1_30_days %}
+- {{ action }}
+{% endfor %}
+
+### Phase 2: Days 31-60
+{% for action in roadmap.phase_2_60_days %}
+- {{ action }}
+{% endfor %}
+
+### Phase 3: Days 61-90
+{% for action in roadmap.phase_3_90_days %}
+- {{ action }}
 {% endfor %}
 {% endif %}
 
