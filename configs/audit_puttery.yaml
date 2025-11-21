@@ -1,0 +1,47 @@
+# Puttery Social Media Audit Configuration
+# Run with: psn audit run --config configs/audit_puttery.yaml
+
+project: puttery-golf-001
+dataset: paid_social
+tenant: puttery
+level: campaign  # Options: account, campaign, adset, ad
+
+# Time windows to analyze
+windows:
+  - Q1
+  - Q2
+  - YTD
+  - last_7d
+  - last_28d
+  - last_90d
+
+# Top-N entities for concentration analysis
+top_n: 3
+
+# Rule weights (must sum to a reasonable total, e.g., 5.0 for equal weighting)
+weights:
+  budget_concentration: 1.0    # How concentrated is spend across entities?
+  creative_diversity: 1.0      # Mix of video vs image ads
+  ctr_threshold: 1.0           # Click-through rate performance
+  frequency_threshold: 1.0     # Ad frequency (avoid ad fatigue)
+  tracking_health: 1.0         # Conversion tracking setup
+
+# Thresholds for each rule
+thresholds:
+  # Budget concentration
+  max_topn_share: 0.7          # Top N entities should not exceed 70% of spend
+
+  # Creative diversity
+  min_video_share: 0.2         # At least 20% video ads
+  min_image_share: 0.2         # At least 20% image ads
+
+  # CTR threshold
+  min_ctr: 0.01                # Minimum 1% CTR
+
+  # Frequency threshold
+  max_frequency: 2.5           # Max frequency before ad fatigue
+  freq_overage_cap: 1.0        # Cap on frequency overage penalty
+
+  # Tracking health
+  min_conv_rate: 0.01          # Minimum 1% conversion rate
+  min_clicks_for_tracking: 100 # Need at least 100 clicks to evaluate tracking
