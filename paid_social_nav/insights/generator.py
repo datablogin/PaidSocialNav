@@ -43,9 +43,13 @@ class InsightsGenerator:
 
         try:
             response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=2000,
+                model="claude-3-5-haiku-20241022",
+                max_tokens=4000,
                 temperature=0.7,
+                thinking={
+                    "type": "enabled",
+                    "budget_tokens": 2000
+                },
                 system="You are an expert paid social media strategist analyzing audit results.",
                 messages=[{"role": "user", "content": prompt}]
             )
