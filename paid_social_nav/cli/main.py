@@ -259,14 +259,29 @@ def audit_run(
 
     result = run_audit(config)
 
-    # Load tenant name from config
-    cfg = yaml.safe_load(Path(config).read_text())
+    # Load tenant name and windows from config
+    try:
+        cfg = yaml.safe_load(Path(config).read_text())
+    except FileNotFoundError:
+        typer.secho(f"Config file not found: {config}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from None
+    except yaml.YAMLError as e:
+        typer.secho(f"Invalid YAML in config: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from None
+
     tenant_name = cfg.get("tenant", "Client")
+    windows = cfg.get("windows", [])
+
+    # Calculate period from windows
+    if windows:
+        period = ", ".join(windows) if len(windows) > 1 else windows[0]
+    else:
+        period = datetime.now().strftime("%Y")
 
     # Prepare data for template
     data = {
         "tenant_name": tenant_name,
-        "period": "2025",
+        "period": period,
         "audit_date": datetime.now().strftime("%Y-%m-%d"),
         "overall_score": result.overall_score,
         "rules": result.rules,

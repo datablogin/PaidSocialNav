@@ -29,7 +29,10 @@
 - **Window**: {{ rule.window }}
 - **Level**: {{ rule.level }}
 - **Score**: {{ rule.score }}/100
-- **Findings**: {{ rule.findings }}
+- **Findings**:
+{% for key, value in rule.findings.items() %}
+  - {{ key|replace('_', ' ')|title }}: {{ value }}
+{% endfor %}
 
 {% endfor %}
 

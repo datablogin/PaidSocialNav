@@ -27,9 +27,19 @@ class ReportRenderer:
         return template.render(**data, version=__version__)
 
     def render_html(self, data: dict[str, Any]) -> str:
-        """Render HTML report from audit data."""
-        template = self.env.get_template("audit_report.html.j2")
-        return template.render(**data, version=__version__)
+        """Render HTML report from audit data.
+
+        Note: HTML template will be available in Phase 2.
+        """
+        try:
+            template = self.env.get_template("audit_report.html.j2")
+            return template.render(**data, version=__version__)
+        except Exception as e:
+            raise NotImplementedError(
+                "HTML template not available in Phase 1. "
+                "Use render_markdown() for Markdown reports. "
+                "HTML rendering will be added in Phase 2."
+            ) from e
 
 
 def render_markdown(templates_dir: Path, data: dict) -> str:
