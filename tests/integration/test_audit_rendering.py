@@ -85,7 +85,6 @@ def mock_bq_client():
     def query_tracking(sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
         """Return realistic conversion tracking data."""
         window = params.get("window")
-        level = params.get("level", "campaign")
 
         clicks_map = {
             "Q4": 18750,
