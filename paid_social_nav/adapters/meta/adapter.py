@@ -19,6 +19,32 @@ class MetaAdapter(BaseAdapter):
 
     BASE_URL = "https://graph.facebook.com/v18.0"
 
+    def _sanitize_error(self, error_data: dict[str, Any] | str) -> dict[str, Any] | str:
+        """Remove sensitive data from error responses to prevent token leakage.
+
+        Args:
+            error_data: Error response from API (dict or string)
+
+        Returns:
+            Sanitized error data with tokens redacted
+        """
+        if isinstance(error_data, dict):
+            # Create a copy to avoid modifying original
+            sanitized = error_data.copy()
+            # Remove any fields that might contain tokens
+            sensitive_keys = ["access_token", "token", "authorization", "api_key"]
+            for key in sensitive_keys:
+                if key in sanitized:
+                    sanitized[key] = "***REDACTED***"
+                # Also check nested error objects
+                if "error" in sanitized and isinstance(sanitized["error"], dict):
+                    for nested_key in sensitive_keys:
+                        if nested_key in sanitized["error"]:
+                            sanitized["error"][nested_key] = "***REDACTED***"
+            return sanitized
+        # For string errors, limit length to prevent accidental token exposure
+        return str(error_data)[:500] if error_data else ""
+
     def fetch_insights(
         self,
         *,
@@ -73,8 +99,8 @@ class MetaAdapter(BaseAdapter):
                 try:
                     err_json = resp.json()
                 except Exception:
-                    err_json = {"error": resp.text}
-                raise RuntimeError(f"Meta insights API error: {err_json}")
+                    err_json = {"error": resp.text[:200]}  # Limit error text length
+                raise RuntimeError(f"Meta insights API error: {self._sanitize_error(err_json)}")
 
             data = resp.json() or {}
             rows = data.get("data", []) or []
@@ -156,8 +182,8 @@ class MetaAdapter(BaseAdapter):
             try:
                 err_json = resp.json()
             except Exception:
-                err_json = {"error": resp.text}
-            raise RuntimeError(f"Meta account API error: {err_json}")
+                err_json = {"error": resp.text[:200]}  # Limit error text length
+            raise RuntimeError(f"Meta account API error: {self._sanitize_error(err_json)}")
 
         return resp.json() or {}
 
@@ -202,8 +228,8 @@ class MetaAdapter(BaseAdapter):
                 try:
                     err_json = resp.json()
                 except Exception:
-                    err_json = {"error": resp.text}
-                raise RuntimeError(f"Meta campaigns API error: {err_json}")
+                    err_json = {"error": resp.text[:200]}  # Limit error text length
+                raise RuntimeError(f"Meta campaigns API error: {self._sanitize_error(err_json)}")
 
             data = resp.json() or {}
             rows = data.get("data", []) or []
@@ -263,8 +289,8 @@ class MetaAdapter(BaseAdapter):
                 try:
                     err_json = resp.json()
                 except Exception:
-                    err_json = {"error": resp.text}
-                raise RuntimeError(f"Meta adsets API error: {err_json}")
+                    err_json = {"error": resp.text[:200]}  # Limit error text length
+                raise RuntimeError(f"Meta adsets API error: {self._sanitize_error(err_json)}")
 
             data = resp.json() or {}
             rows = data.get("data", []) or []
@@ -319,8 +345,8 @@ class MetaAdapter(BaseAdapter):
                 try:
                     err_json = resp.json()
                 except Exception:
-                    err_json = {"error": resp.text}
-                raise RuntimeError(f"Meta ads API error: {err_json}")
+                    err_json = {"error": resp.text[:200]}  # Limit error text length
+                raise RuntimeError(f"Meta ads API error: {self._sanitize_error(err_json)}")
 
             data = resp.json() or {}
             rows = data.get("data", []) or []
@@ -377,8 +403,8 @@ class MetaAdapter(BaseAdapter):
                 try:
                     err_json = resp.json()
                 except Exception:
-                    err_json = {"error": resp.text}
-                raise RuntimeError(f"Meta creatives API error: {err_json}")
+                    err_json = {"error": resp.text[:200]}  # Limit error text length
+                raise RuntimeError(f"Meta creatives API error: {self._sanitize_error(err_json)}")
 
             data = resp.json() or {}
             rows = data.get("data", []) or []

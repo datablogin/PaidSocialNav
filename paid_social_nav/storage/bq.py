@@ -365,16 +365,16 @@ def load_benchmarks_csv(
         raise ValueError("Invalid dataset: must contain only alphanumeric or underscore characters")
 
     # Validate CSV path to prevent path traversal attacks
+    # Check for path traversal sequences BEFORE resolving
+    if ".." in csv_path or "~" in csv_path:
+        raise ValueError(f"Path traversal not allowed in csv_path: {csv_path}")
+
     csv_file = Path(csv_path)
-    # Resolve to absolute path and check for traversal
+    # Resolve to absolute path
     try:
         resolved_path = csv_file.resolve(strict=True)
     except Exception as e:
         raise FileNotFoundError(f"Invalid CSV path: {csv_path}") from e
-
-    # Check for path traversal sequences
-    if ".." in csv_path or "~" in csv_path:
-        raise ValueError(f"Path traversal not allowed in csv_path: {csv_path}")
 
     if not resolved_path.exists():
         raise FileNotFoundError(f"Benchmarks CSV not found: {csv_path}")
@@ -414,6 +414,14 @@ def load_benchmarks_csv(
             p50 = _safe_float(row.get("p50"))
             p75 = _safe_float(row.get("p75"))
             p90 = _safe_float(row.get("p90"))
+
+            # Validate percentile values are in reasonable range
+            for name, value in [("p25", p25), ("p50", p50), ("p75", p75), ("p90", p90)]:
+                if value is not None and (value < 0 or value > 1000000):
+                    raise ValueError(
+                        f"Row {row_num}: {name}={value} is out of reasonable range (0-1000000). "
+                        "Check if this is a valid metric value."
+                    )
 
             # Validate percentile ordering (if all present)
             if all(v is not None for v in [p25, p50, p75, p90]):
@@ -508,8 +516,8 @@ def upsert_dimension(
     """Upsert dimension records using MERGE statement.
 
     Args:
-        project_id: GCP project ID
-        dataset: BigQuery dataset name
+        project_id: GCP project ID (alphanumeric, underscore, hyphen only)
+        dataset: BigQuery dataset name (alphanumeric, underscore only)
         table_name: Dimension table name (e.g., 'dim_account', 'dim_campaign')
         rows: List of dimension records to upsert
         merge_key: Primary key field for matching (e.g., 'account_global_id')
@@ -518,14 +526,34 @@ def upsert_dimension(
         Number of rows processed
 
     Raises:
+        ValueError: If inputs contain invalid characters (SQL injection prevention)
         RuntimeError: If upsert fails
     """
+    import json
+    import re
+    import uuid
+    from io import BytesIO
+
     if not rows:
         return 0
 
-    import json
-    import uuid
-    from io import BytesIO
+    # Validate inputs to prevent SQL injection
+    if not re.match(r"^[A-Za-z0-9_\-]+$", project_id):
+        raise ValueError(
+            f"Invalid project_id '{project_id}': must contain only alphanumeric, underscore, or hyphen"
+        )
+    if not re.match(r"^[A-Za-z0-9_]+$", dataset):
+        raise ValueError(
+            f"Invalid dataset '{dataset}': must contain only alphanumeric or underscore"
+        )
+    if not re.match(r"^[A-Za-z0-9_]+$", table_name):
+        raise ValueError(
+            f"Invalid table_name '{table_name}': must contain only alphanumeric or underscore"
+        )
+    if not re.match(r"^[A-Za-z0-9_]+$", merge_key):
+        raise ValueError(
+            f"Invalid merge_key '{merge_key}': must contain only alphanumeric or underscore"
+        )
 
     client = bigquery.Client(project=project_id)
     dest_table = f"{project_id}.{dataset}.{table_name}"
