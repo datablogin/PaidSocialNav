@@ -1,8 +1,52 @@
-"""Chart generation utilities for audit reports."""
+"""Chart generation and visualization utilities for audit reports.
+
+This module provides utilities for generating professional-grade matplotlib charts that
+visualize the results of paid social media advertising audits. It enables rendering of
+complex audit metrics into clear, interpretable visual formats suitable for client reports
+and stakeholder presentations.
+
+Supported chart types: pie charts for creative distribution, bar charts for budget pacing
+analysis, line charts for performance trends, and horizontal bar charts for rule-based scoring.
+Charts can be saved to disk as PNG files and/or embedded as base64-encoded data URIs.
+
+Chart Generation Process:
+1. Create ChartGenerator instance with optional output directory and DPI settings
+2. Call appropriate chart generation method with audit rule results
+3. Method extracts relevant data, calculates aggregations, and constructs visualization
+4. Charts rendered using matplotlib with configurable styling and layout
+5. Charts saved to file (if output_dir specified) and encoded as base64 strings
+
+Usage:
+    from pathlib import Path
+    from paid_social_nav.visuals.charts import ChartGenerator
+
+    generator = ChartGenerator(output_dir=Path("./output"), dpi=150)
+    creative = generator.generate_creative_mix_chart(
+        rules=audit_results['rules'],
+        tenant_name="client_name"
+    )
+    print(f"Chart saved: {creative.get('path')}")
+    print(f"Base64 size: {len(creative.get('base64', ''))} bytes")
+
+Architecture Notes:
+    - Uses matplotlib 'Agg' backend for server-side rendering
+    - Responsive figure sizing based on data complexity
+    - Handles missing data gracefully with debug logging
+    - Base64 encoding for web embedding
+    - Color-coded visualizations (green/yellow/orange/red scoring)
+    - Automatic figure cleanup to prevent memory leaks
+
+Performance Notes:
+    - Base64 encoding adds ~33% overhead to PNG binary size
+    - Consider caching charts for repeated audit results
+    - DPI setting affects file size and quality
+    - Each chart generation creates temporary figure in memory
+"""
 
 from __future__ import annotations
 
 import base64
+from collections import defaultdict
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -17,6 +61,23 @@ from ..core.logging_config import get_logger
 matplotlib.use("Agg")
 
 logger = get_logger(__name__)
+
+
+# Score threshold constants for performance scoring
+SCORE_EXCELLENT_THRESHOLD = 80
+SCORE_GOOD_THRESHOLD = 60
+SCORE_FAIR_THRESHOLD = 40
+
+# Color constants for score distribution visualization
+COLOR_EXCELLENT = "#4caf50"  # Green
+COLOR_GOOD = "#ffc107"  # Yellow
+COLOR_FAIR = "#ff9800"  # Orange
+COLOR_POOR = "#f44336"  # Red
+
+# Color constants for creative mix and performance charts
+COLOR_VIDEO = "#667eea"  # Blue/Purple
+COLOR_IMAGE = "#764ba2"  # Dark Purple
+COLOR_OTHER = "#cccccc"  # Light Gray
 
 
 class ChartGenerator:
@@ -46,18 +107,14 @@ class ChartGenerator:
         Returns:
             Dict with 'path' (if output_dir set) and 'base64' keys
         """
-        # Find creative_diversity rules and extract shares
-        creative_rules = [r for r in rules if r.get("rule") == "creative_diversity"]
-
-        if not creative_rules:
-            logger.debug("No creative diversity data found, skipping chart")
-            return {}
-
-        # Average across windows if multiple
+        # Single-pass iteration: collect and aggregate shares in one pass
         video_shares = []
         image_shares = []
 
-        for rule in creative_rules:
+        for rule in rules:
+            if rule.get("rule") != "creative_diversity":
+                continue
+
             findings = rule.get("findings", {})
             video_share = findings.get("video_share", 0.0)
             image_share = findings.get("image_share", 0.0)
@@ -67,7 +124,7 @@ class ChartGenerator:
                 image_shares.append(image_share)
 
         if not video_shares and not image_shares:
-            logger.debug("No creative mix data available")
+            logger.debug("No creative diversity data found, skipping chart")
             return {}
 
         avg_video = np.mean(video_shares) if video_shares else 0.0
@@ -84,17 +141,17 @@ class ChartGenerator:
         if avg_video > 0:
             labels.append(f"Video ({avg_video * 100:.1f}%)")
             sizes.append(avg_video)
-            colors.append("#667eea")
+            colors.append(COLOR_VIDEO)
 
         if avg_image > 0:
             labels.append(f"Image ({avg_image * 100:.1f}%)")
             sizes.append(avg_image)
-            colors.append("#764ba2")
+            colors.append(COLOR_IMAGE)
 
         if other > 0:
             labels.append(f"Other ({other * 100:.1f}%)")
             sizes.append(other)
-            colors.append("#cccccc")
+            colors.append(COLOR_OTHER)
 
         if not sizes:
             plt.close(fig)
@@ -117,18 +174,15 @@ class ChartGenerator:
         Returns:
             Dict with 'path' (if output_dir set) and 'base64' keys
         """
-        # Find pacing_vs_target rules
-        pacing_rules = [r for r in rules if r.get("rule") == "pacing_vs_target"]
-
-        if not pacing_rules:
-            logger.debug("No pacing data found, skipping chart")
-            return {}
-
+        # Single-pass iteration: collect pacing data in one pass
         windows = []
         actuals = []
         targets = []
 
-        for rule in pacing_rules:
+        for rule in rules:
+            if rule.get("rule") != "pacing_vs_target":
+                continue
+
             findings = rule.get("findings", {})
             actual = findings.get("actual", 0.0)
             target = findings.get("target", 0.0)
@@ -139,7 +193,7 @@ class ChartGenerator:
                 targets.append(target)
 
         if not windows:
-            logger.debug("No pacing data with targets available")
+            logger.debug("No pacing data found, skipping chart")
             return {}
 
         # Create grouped bar chart
@@ -148,8 +202,8 @@ class ChartGenerator:
 
         fig, ax = plt.subplots(figsize=(8, 5))
 
-        bars1 = ax.bar(x - width / 2, actuals, width, label="Actual Spend", color="#667eea")
-        bars2 = ax.bar(x + width / 2, targets, width, label="Target Spend", color="#764ba2")
+        bars1 = ax.bar(x - width / 2, actuals, width, label="Actual Spend", color=COLOR_VIDEO)
+        bars2 = ax.bar(x + width / 2, targets, width, label="Target Spend", color=COLOR_IMAGE)
 
         ax.set_xlabel("Time Window", fontsize=11)
         ax.set_ylabel("Spend ($)", fontsize=11)
@@ -188,34 +242,28 @@ class ChartGenerator:
         Returns:
             Dict with 'path' (if output_dir set) and 'base64' keys
         """
-        # Extract CTR and frequency data
-        ctr_rules = [r for r in rules if r.get("rule") == "ctr_threshold"]
-        freq_rules = [r for r in rules if r.get("rule") == "frequency_threshold"]
+        # Single-pass iteration: process all rules once, organizing by window and type
+        window_data: dict[str, dict[str, float]] = defaultdict(dict)
+        has_any_data = False
 
-        if not ctr_rules and not freq_rules:
+        for rule in rules:
+            rule_type = rule.get("rule")
+            if rule_type not in ("ctr_threshold", "frequency_threshold"):
+                continue
+
+            has_any_data = True
+            window = rule.get("window", "unknown")
+            findings = rule.get("findings", {})
+
+            if rule_type == "ctr_threshold":
+                ctr = findings.get("ctr", 0.0)
+                window_data[window]["ctr"] = ctr * 100  # Convert to percentage
+            elif rule_type == "frequency_threshold":
+                freq = findings.get("frequency", 0.0)
+                window_data[window]["frequency"] = freq
+
+        if not has_any_data or not window_data:
             logger.debug("No performance trend data found, skipping chart")
-            return {}
-
-        # Organize by window
-        window_data: dict[str, dict[str, float]] = {}
-
-        for rule in ctr_rules:
-            window = rule.get("window", "unknown")
-            findings = rule.get("findings", {})
-            ctr = findings.get("ctr", 0.0)
-            if window not in window_data:
-                window_data[window] = {}
-            window_data[window]["ctr"] = ctr * 100  # Convert to percentage
-
-        for rule in freq_rules:
-            window = rule.get("window", "unknown")
-            findings = rule.get("findings", {})
-            freq = findings.get("frequency", 0.0)
-            if window not in window_data:
-                window_data[window] = {}
-            window_data[window]["frequency"] = freq
-
-        if not window_data:
             return {}
 
         # Sort windows (basic alphabetical for now)
@@ -237,7 +285,7 @@ class ChartGenerator:
 
         # Plot CTR on left axis
         if has_ctr:
-            color1 = "#667eea"
+            color1 = COLOR_VIDEO
             ax1.set_xlabel("Time Window", fontsize=11)
             ax1.set_ylabel("CTR (%)", color=color1, fontsize=11)
             line1 = ax1.plot(
@@ -249,7 +297,7 @@ class ChartGenerator:
         # Plot Frequency on right axis
         ax2 = ax1.twinx() if has_freq else None
         if has_freq and ax2:
-            color2 = "#764ba2"
+            color2 = COLOR_IMAGE
             ax2.set_ylabel("Frequency", color=color2, fontsize=11)
             line2 = ax2.plot(
                 x, freqs, color=color2, marker="s", linewidth=2, label="Frequency"
@@ -291,15 +339,12 @@ class ChartGenerator:
         if not rules:
             return {}
 
-        # Group by rule name and average scores across windows
-        rule_scores: dict[str, list[float]] = {}
+        # Single-pass iteration with defaultdict to avoid repeated dictionary checks
+        rule_scores: dict[str, list[float]] = defaultdict(list)
 
         for rule in rules:
             rule_name = rule.get("rule", "unknown")
             score = rule.get("score", 0.0)
-
-            if rule_name not in rule_scores:
-                rule_scores[rule_name] = []
             rule_scores[rule_name].append(score)
 
         # Calculate average score per rule
@@ -316,17 +361,14 @@ class ChartGenerator:
         # Create horizontal bar chart
         fig, ax = plt.subplots(figsize=(8, len(rule_names) * 0.5 + 2))
 
-        # Color bars based on score
-        colors = []
-        for score in avg_scores:
-            if score >= 80:
-                colors.append("#4caf50")  # Green
-            elif score >= 60:
-                colors.append("#ffc107")  # Yellow
-            elif score >= 40:
-                colors.append("#ff9800")  # Orange
-            else:
-                colors.append("#f44336")  # Red
+        # Color bars based on score - single pass with list comprehension
+        colors = [
+            COLOR_EXCELLENT if score >= SCORE_EXCELLENT_THRESHOLD
+            else COLOR_GOOD if score >= SCORE_GOOD_THRESHOLD
+            else COLOR_FAIR if score >= SCORE_FAIR_THRESHOLD
+            else COLOR_POOR
+            for score in avg_scores
+        ]
 
         y_pos = np.arange(len(rule_names))
         bars = ax.barh(y_pos, avg_scores, color=colors, alpha=0.8)

@@ -1,4 +1,73 @@
-"""Meta dimension sync functionality."""
+"""Meta platform dimension synchronization to BigQuery data warehouse.
+
+This module handles syncing dimension tables from Meta's advertising platform (Facebook,
+Instagram, etc.) to BigQuery for analysis and reporting. It implements a complete extraction
+pipeline that fetches account hierarchies, campaigns, ad sets, ads, and creatives from the
+Meta API and materializes them as dimension tables with surrogate keys and historical tracking.
+
+Dimensions represent the structural entities in Meta's advertising platform and act as lookup
+tables that provide context for fact tables containing performance metrics. This module
+standardizes Meta's raw API responses into a consistent dimensional schema suitable for
+analytics queries and reporting.
+
+Dimension Sync Pipeline:
+1. Authenticate with Meta API using access token
+2. Normalize account ID format (ensure "act_" prefix)
+3. For each dimension type (account, campaign, adset, ad, creative):
+   a. Fetch paginated results from Meta API with exponential backoff retry logic
+   b. Transform API responses into dimension table rows
+   c. Generate global IDs with "platform:entity:id" format
+   d. Ensure BigQuery tables exist with proper schema
+   e. Upsert rows using global ID as merge key
+4. Return counts of upserted records for each dimension type
+
+Usage:
+    from paid_social_nav.adapters.meta.dimensions import sync_all_dimensions
+
+    counts = sync_all_dimensions(
+        account_id="123456789",
+        project_id="my-gcp-project",
+        dataset="paid_social_meta",
+        access_token="token_xyz",
+        page_size=500,
+        retries=3
+    )
+
+    print(f"Accounts: {counts['account']}")
+    print(f"Campaigns: {counts['campaigns']}")
+    print(f"Ads: {counts['ads']}")
+
+Architecture Notes:
+    - Global IDs follow "meta:entitytype:platform_id" format for uniqueness
+    - Implements standardized helper functions for data transformation
+    - Uses BigQuery MERGE operations for idempotent upserts
+    - Includes exponential backoff with jitter for API rate limit handling
+    - Stores raw API response JSON for debugging and schema evolution
+    - Timestamps all records with sync time in UTC
+
+Data Flow:
+    - Accounts: Single record per account with status, currency, timezone
+    - Campaigns: Budget, objective, status, created_time from Meta API
+    - Ad Sets: Targeting, budget, optimization goals per campaign
+    - Ads: Individual ad creatives with status and creative references
+    - Creatives: Image/video URLs, titles, body copy, call-to-action types
+
+Performance Notes:
+    - Default page_size (500) balances API payload size and round-trip count
+    - Pagination handles accounts with thousands of campaigns/ads automatically
+    - Exponential backoff prevents API rate limiting (capped at 60 seconds)
+    - Jitter prevents thundering herd effect in distributed sync scenarios
+
+Error Handling:
+    - Retries with exponential backoff (2.0 base, capped at 60s)
+    - Logs detailed error context including attempt count and account ID
+    - Raises exception after max retries to fail fast
+
+Security Notes:
+    - Access token is passed to MetaAdapter, never logged
+    - Account IDs are normalized but raw platform IDs preserved
+    - Raw API responses stored for compliance/debugging purposes
+"""
 
 from __future__ import annotations
 
