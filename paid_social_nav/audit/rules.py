@@ -243,17 +243,20 @@ def performance_vs_benchmarks(
             continue
 
         bench = benchmarks[metric_name]
+
+        # Get all percentiles - require all to be present for accurate tier assignment
+        p25 = bench.get("p25")
         p50 = bench.get("p50")
-        if p50 is None:
+        p75 = bench.get("p75")
+        p90 = bench.get("p90")
+
+        # Skip metrics with incomplete benchmark data
+        if any(v is None for v in [p25, p50, p75, p90]):
             continue
 
         total_metrics += 1
 
         # Determine percentile tier
-        p25 = bench.get("p25", 0.0)
-        p75 = bench.get("p75", p50)
-        p90 = bench.get("p90", p75)
-
         if actual_value >= p90:
             tier = "p90+"
         elif actual_value >= p75:
