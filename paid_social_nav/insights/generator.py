@@ -14,8 +14,17 @@ logger = get_logger(__name__)
 class InsightsGenerator:
     """Generates strategic insights from audit results using Claude API."""
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, max_tokens: int = 4000, temperature: float = 0.7):
+        """Initialize the insights generator.
+
+        Args:
+            api_key: Anthropic API key
+            max_tokens: Maximum tokens for Claude response (default: 4000)
+            temperature: Response temperature 0-1 (default: 0.7)
+        """
         self.client = anthropic.Anthropic(api_key=api_key)
+        self.max_tokens = max_tokens
+        self.temperature = temperature
 
     def generate_strategy(
         self, audit_result: AuditResult, tenant_name: str
@@ -44,8 +53,8 @@ class InsightsGenerator:
         try:
             response = self.client.messages.create(
                 model="claude-3-5-haiku-20241022",
-                max_tokens=2000,
-                temperature=0.7,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
                 system="You are an expert paid social media strategist analyzing audit results.",
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -68,21 +77,30 @@ class InsightsGenerator:
 
             return insights
 
+        except anthropic.AuthenticationError:
+            logger.error("Invalid Anthropic API key", extra={"tenant": tenant_name})
+            raise
+        except anthropic.RateLimitError:
+            logger.error("Anthropic API rate limit exceeded", extra={"tenant": tenant_name})
+            raise
         except Exception as e:
             logger.error(
                 "Failed to generate insights",
-                extra={"tenant": tenant_name, "error": str(e)}
+                extra={"tenant": tenant_name, "error": str(e), "error_type": type(e).__name__}
             )
             raise
 
     def _build_prompt(self, audit_result: AuditResult, tenant_name: str) -> str:
         """Build the analysis prompt for Claude."""
+        # Sanitize tenant name to prevent prompt injection
+        safe_tenant_name = tenant_name.replace('\n', ' ').replace('\r', ' ')[:100]
+
         rules_summary = "\n".join([
             f"- {rule['rule']}: {rule['score']}/100 ({rule['findings']})"
             for rule in audit_result.rules
         ])
 
-        return f"""Analyze this paid social media audit for {tenant_name}:
+        return f"""Analyze this paid social media audit for {safe_tenant_name}:
 
 Overall Score: {audit_result.overall_score}/100
 

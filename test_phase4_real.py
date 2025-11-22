@@ -24,7 +24,7 @@ context = {
 print("\n" + "="*60)
 print("Phase 4 Real Audit Test - 18 Months Puttery Data")
 print("="*60)
-print(f"\nConfiguration:")
+print("\nConfiguration:")
 print(f"  Tenant: {context['tenant_id']}")
 print(f"  Config: {context['audit_config']}")
 print(f"  Output: {context['output_dir']}")
@@ -45,7 +45,7 @@ try:
 
     if result.success:
         print(f"\n✅ Success: {result.message}")
-        print(f"\nReports generated:")
+        print("\nReports generated:")
         print(f"  📄 Markdown: {result.data.get('markdown_report')}")
         print(f"  🌐 HTML: {result.data.get('html_report')}")
         print(f"\nYou can now review the reports in {context['output_dir']}/")
