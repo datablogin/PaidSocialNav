@@ -242,6 +242,7 @@ def load_benchmarks_csv(
         RuntimeError: If load fails
     """
     import csv
+    import json
     import re
     import uuid
     from io import BytesIO
@@ -249,9 +250,9 @@ def load_benchmarks_csv(
 
     # Validate inputs to prevent SQL injection
     if not re.match(r"^[A-Za-z0-9_\-]+$", project_id):
-        raise ValueError(f"Invalid project_id: must contain only alphanumeric, underscore, or hyphen characters")
+        raise ValueError("Invalid project_id: must contain only alphanumeric, underscore, or hyphen characters")
     if not re.match(r"^[A-Za-z0-9_]+$", dataset):
-        raise ValueError(f"Invalid dataset: must contain only alphanumeric or underscore characters")
+        raise ValueError("Invalid dataset: must contain only alphanumeric or underscore characters")
 
     client = bigquery.Client(project=project_id)
 
