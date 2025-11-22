@@ -19,6 +19,16 @@ class MetaAdapter(BaseAdapter):
 
     BASE_URL = "https://graph.facebook.com/v18.0"
 
+    def __init__(self, access_token: str, timeout: int = 60):
+        """Initialize Meta adapter with access token and optional timeout.
+
+        Args:
+            access_token: Meta API access token
+            timeout: Request timeout in seconds (default: 60)
+        """
+        super().__init__(access_token)
+        self.timeout = timeout
+
     def _sanitize_error(self, error_data: dict[str, Any] | str) -> dict[str, Any] | str:
         """Remove sensitive data from error responses to prevent token leakage.
 
@@ -94,7 +104,7 @@ class MetaAdapter(BaseAdapter):
 
         url = endpoint
         while True:
-            resp = requests.get(url, params=params, timeout=60)
+            resp = requests.get(url, params=params, timeout=self.timeout)
             if resp.status_code != 200:
                 try:
                     err_json = resp.json()
@@ -177,7 +187,7 @@ class MetaAdapter(BaseAdapter):
             "fields": ",".join(fields),
         }
 
-        resp = requests.get(endpoint, params=params, timeout=60)
+        resp = requests.get(endpoint, params=params, timeout=self.timeout)
         if resp.status_code != 200:
             try:
                 err_json = resp.json()
@@ -223,7 +233,7 @@ class MetaAdapter(BaseAdapter):
 
         url = endpoint
         while True:
-            resp = requests.get(url, params=params, timeout=60)
+            resp = requests.get(url, params=params, timeout=self.timeout)
             if resp.status_code != 200:
                 try:
                     err_json = resp.json()
@@ -284,7 +294,7 @@ class MetaAdapter(BaseAdapter):
 
         url = endpoint
         while True:
-            resp = requests.get(url, params=params, timeout=60)
+            resp = requests.get(url, params=params, timeout=self.timeout)
             if resp.status_code != 200:
                 try:
                     err_json = resp.json()
@@ -340,7 +350,7 @@ class MetaAdapter(BaseAdapter):
 
         url = endpoint
         while True:
-            resp = requests.get(url, params=params, timeout=60)
+            resp = requests.get(url, params=params, timeout=self.timeout)
             if resp.status_code != 200:
                 try:
                     err_json = resp.json()
@@ -398,7 +408,7 @@ class MetaAdapter(BaseAdapter):
 
         url = endpoint
         while True:
-            resp = requests.get(url, params=params, timeout=60)
+            resp = requests.get(url, params=params, timeout=self.timeout)
             if resp.status_code != 200:
                 try:
                     err_json = resp.json()

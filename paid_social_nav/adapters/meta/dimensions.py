@@ -27,14 +27,22 @@ def _norm_act(account_id: str) -> str:
 
 
 def _parse_timestamp(ts: str | None) -> str | None:
-    """Parse and format timestamp from Meta API response."""
+    """Parse and format timestamp from Meta API response.
+
+    Args:
+        ts: ISO format timestamp string from Meta API
+
+    Returns:
+        ISO formatted timestamp or None if parsing fails
+    """
     if not ts:
         return None
     try:
         # Meta returns ISO format timestamps
         dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
         return dt.isoformat()
-    except Exception:
+    except (ValueError, TypeError) as e:
+        logger.warning(f"Failed to parse timestamp '{ts}': {e}")
         return None
 
 
@@ -134,9 +142,8 @@ def sync_campaign_dimensions(
     logger.info("Fetching campaigns", extra={"account_id": act})
 
     rows = []
-    attempt = 0
 
-    while True:
+    for attempt in range(retries + 1):
         try:
             for campaign in adapter.fetch_campaigns(act, page_size=page_size):
                 campaign_id = campaign.get("id", "")
@@ -155,21 +162,20 @@ def sync_campaign_dimensions(
                     "raw_data": campaign,
                 }
                 rows.append(row)
-            break
+            break  # Success
         except Exception as e:
-            attempt += 1
-            if attempt > retries:
+            if attempt >= retries:
                 logger.error(
                     "Failed to fetch campaigns after retries",
-                    extra={"account_id": act, "error": str(e)},
+                    extra={"account_id": act, "attempts": attempt + 1, "error": str(e)},
                 )
                 raise
-            backoff_time = retry_backoff * (2 ** (attempt - 1))
+            backoff_time = retry_backoff * (2**attempt)
             logger.warning(
                 "Campaign fetch failed, retrying",
                 extra={
                     "account_id": act,
-                    "attempt": attempt,
+                    "attempt": attempt + 1,
                     "backoff": backoff_time,
                 },
             )
@@ -222,9 +228,12 @@ def sync_adset_dimensions(
     logger.info("Fetching ad sets", extra={"account_id": act})
 
     rows = []
-    attempt = 0
 
-    while True:
+
+
+
+
+    for attempt in range(retries + 1):
         try:
             for adset in adapter.fetch_adsets(act, page_size=page_size):
                 adset_id = adset.get("id", "")
@@ -248,21 +257,20 @@ def sync_adset_dimensions(
                     "raw_data": adset,
                 }
                 rows.append(row)
-            break
+            break  # Success
         except Exception as e:
-            attempt += 1
-            if attempt > retries:
+            if attempt >= retries:
                 logger.error(
                     "Failed to fetch ad sets after retries",
-                    extra={"account_id": act, "error": str(e)},
+                    extra={"account_id": act, "attempts": attempt + 1, "error": str(e)},
                 )
                 raise
-            backoff_time = retry_backoff * (2 ** (attempt - 1))
+            backoff_time = retry_backoff * (2**attempt)
             logger.warning(
                 "Ad set fetch failed, retrying",
                 extra={
                     "account_id": act,
-                    "attempt": attempt,
+                    "attempt": attempt + 1,
                     "backoff": backoff_time,
                 },
             )
@@ -315,9 +323,12 @@ def sync_ad_dimensions(
     logger.info("Fetching ads", extra={"account_id": act})
 
     rows = []
-    attempt = 0
 
-    while True:
+
+
+
+
+    for attempt in range(retries + 1):
         try:
             for ad in adapter.fetch_ads(act, page_size=page_size):
                 ad_id = ad.get("id", "")
@@ -340,21 +351,20 @@ def sync_ad_dimensions(
                     "raw_data": ad,
                 }
                 rows.append(row)
-            break
+            break  # Success
         except Exception as e:
-            attempt += 1
-            if attempt > retries:
+            if attempt >= retries:
                 logger.error(
                     "Failed to fetch ads after retries",
-                    extra={"account_id": act, "error": str(e)},
+                    extra={"account_id": act, "attempts": attempt + 1, "error": str(e)},
                 )
                 raise
-            backoff_time = retry_backoff * (2 ** (attempt - 1))
+            backoff_time = retry_backoff * (2**attempt)
             logger.warning(
                 "Ad fetch failed, retrying",
                 extra={
                     "account_id": act,
-                    "attempt": attempt,
+                    "attempt": attempt + 1,
                     "backoff": backoff_time,
                 },
             )
@@ -407,9 +417,12 @@ def sync_creative_dimensions(
     logger.info("Fetching creatives", extra={"account_id": act})
 
     rows = []
-    attempt = 0
 
-    while True:
+
+
+
+
+    for attempt in range(retries + 1):
         try:
             for creative in adapter.fetch_creatives(act, page_size=page_size):
                 creative_id = creative.get("id", "")
@@ -430,21 +443,20 @@ def sync_creative_dimensions(
                     "raw_data": creative,
                 }
                 rows.append(row)
-            break
+            break  # Success
         except Exception as e:
-            attempt += 1
-            if attempt > retries:
+            if attempt >= retries:
                 logger.error(
                     "Failed to fetch creatives after retries",
-                    extra={"account_id": act, "error": str(e)},
+                    extra={"account_id": act, "attempts": attempt + 1, "error": str(e)},
                 )
                 raise
-            backoff_time = retry_backoff * (2 ** (attempt - 1))
+            backoff_time = retry_backoff * (2**attempt)
             logger.warning(
                 "Creative fetch failed, retrying",
                 extra={
                     "account_id": act,
-                    "attempt": attempt,
+                    "attempt": attempt + 1,
                     "backoff": backoff_time,
                 },
             )
