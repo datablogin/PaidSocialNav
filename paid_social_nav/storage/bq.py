@@ -98,6 +98,26 @@ def ensure_dim_ad_table(project_id: str, dataset: str) -> None:
     client.create_table(table, exists_ok=True)
 
 
+def ensure_benchmarks_table(project_id: str, dataset: str) -> None:
+    """Ensure benchmarks_performance table exists with proper schema."""
+    client = bigquery.Client(project=project_id)
+    table_id = f"{project_id}.{dataset}.benchmarks_performance"
+
+    schema = [
+        bigquery.SchemaField("industry", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("region", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("spend_band", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("metric_name", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("p25", "FLOAT64", mode="NULLABLE"),
+        bigquery.SchemaField("p50", "FLOAT64", mode="NULLABLE"),
+        bigquery.SchemaField("p75", "FLOAT64", mode="NULLABLE"),
+        bigquery.SchemaField("p90", "FLOAT64", mode="NULLABLE"),
+    ]
+
+    table = bigquery.Table(table_id, schema=schema)
+    client.create_table(table, exists_ok=True)
+
+
 def _staging_table(project_id: str, dataset: str, unique_id: str | None = None) -> str:
     """Generate staging table name with optional unique ID to prevent race conditions."""
     if unique_id:
@@ -187,3 +207,57 @@ def load_json_rows(
     finally:
         # Clean up staging table
         client.delete_table(stg_table, not_found_ok=True)
+
+
+def load_benchmarks_csv(
+    *, project_id: str, dataset: str, csv_path: str
+) -> int:
+    """Load benchmarks from CSV file into benchmarks_performance table.
+
+    Returns the number of rows loaded.
+    """
+    import csv
+    from pathlib import Path
+
+    client = bigquery.Client(project=project_id)
+
+    # Ensure table exists
+    ensure_benchmarks_table(project_id, dataset)
+
+    table_id = f"{project_id}.{dataset}.benchmarks_performance"
+
+    # Read CSV and prepare rows
+    rows = []
+    csv_file = Path(csv_path)
+
+    if not csv_file.exists():
+        raise FileNotFoundError(f"Benchmarks CSV not found: {csv_path}")
+
+    with csv_file.open("r") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            # Convert percentile values to float, handle empty strings
+            benchmark_row = {
+                "industry": row["industry"],
+                "region": row["region"],
+                "spend_band": row["spend_band"],
+                "metric_name": row["metric_name"],
+                "p25": float(row["p25"]) if row.get("p25") else None,
+                "p50": float(row["p50"]) if row.get("p50") else None,
+                "p75": float(row["p75"]) if row.get("p75") else None,
+                "p90": float(row["p90"]) if row.get("p90") else None,
+            }
+            rows.append(benchmark_row)
+
+    if not rows:
+        return 0
+
+    # Delete existing data and insert new (full refresh approach for benchmarks)
+    client.query(f"DELETE FROM `{table_id}` WHERE 1=1").result()
+
+    # Insert new data
+    errors = client.insert_rows_json(table_id, rows)
+    if errors:
+        raise RuntimeError(f"Failed to insert benchmark rows: {errors}")
+
+    return len(rows)

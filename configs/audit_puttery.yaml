@@ -18,13 +18,19 @@ windows:
 # Top-N entities for concentration analysis
 top_n: 3
 
-# Rule weights (must sum to a reasonable total, e.g., 5.0 for equal weighting)
+# Benchmark mapping for performance comparison
+industry: retail
+region: US
+spend_band: 10k-50k
+
+# Rule weights (must sum to a reasonable total, e.g., 6.0 for equal weighting)
 weights:
   budget_concentration: 1.0    # How concentrated is spend across entities?
   creative_diversity: 1.0      # Mix of video vs image ads
   ctr_threshold: 1.0           # Click-through rate performance
   frequency_threshold: 1.0     # Ad frequency (avoid ad fatigue)
   tracking_health: 1.0         # Conversion tracking setup
+  performance_vs_benchmarks: 1.0  # Performance vs industry benchmarks
 
 # Thresholds for each rule
 thresholds:

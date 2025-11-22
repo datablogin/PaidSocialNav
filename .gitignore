@@ -156,3 +156,13 @@ ehthumbs.db
 infra/**/.terraform/
 infra/**/.terraform.lock.hcl
 infra/**/terraform.tfstate*
+
+# Development and test artifacts
+reports/
+!reports/README.md
+
+# Data directory - ignore most files but keep benchmarks and templates
+!data/README.md
+!data/benchmarks_performance.csv
+!data/*_template.csv
+data/

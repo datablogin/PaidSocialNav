@@ -200,3 +200,111 @@ def tracking_health(
             "min_clicks": min_clicks,
         },
     )
+
+
+def performance_vs_benchmarks(
+    actual_metrics: dict[str, float],
+    benchmarks: dict[str, dict[str, float]],
+    level: str = "campaign",
+    window: str = "last_28d",
+) -> RuleResult:
+    """Compare actual performance metrics against industry benchmarks.
+
+    Args:
+        actual_metrics: Dict of metric_name -> actual_value (e.g., {"ctr": 0.015, "frequency": 2.5})
+        benchmarks: Dict of metric_name -> percentiles (e.g., {"ctr": {"p25": 0.01, "p50": 0.015, "p75": 0.022}})
+        level: Entity level being audited
+        window: Time window for the metrics
+
+    Returns:
+        RuleResult with score based on how many metrics meet or exceed p50 benchmark
+    """
+    if not benchmarks or not actual_metrics:
+        # No benchmarks available - neutral score
+        return RuleResult(
+            rule="performance_vs_benchmarks",
+            level=level,
+            window=window,
+            score=50.0,
+            findings={
+                "comparisons": [],
+                "benchmarks_available": False,
+                "metrics_above_p50": 0,
+                "total_metrics": 0,
+            },
+        )
+
+    comparisons = []
+    metrics_above_p50 = 0
+    total_metrics = 0
+
+    for metric_name, actual_value in actual_metrics.items():
+        if metric_name not in benchmarks:
+            continue
+
+        bench = benchmarks[metric_name]
+        p50 = bench.get("p50")
+        if p50 is None:
+            continue
+
+        total_metrics += 1
+
+        # Determine percentile tier
+        p25 = bench.get("p25", 0.0)
+        p75 = bench.get("p75", p50)
+        p90 = bench.get("p90", p75)
+
+        if actual_value >= p90:
+            tier = "p90+"
+            tier_score = 100.0
+        elif actual_value >= p75:
+            tier = "p75-p90"
+            tier_score = 85.0
+        elif actual_value >= p50:
+            tier = "p50-p75"
+            tier_score = 70.0
+            metrics_above_p50 += 1
+        elif actual_value >= p25:
+            tier = "p25-p50"
+            tier_score = 50.0
+        else:
+            tier = "below_p25"
+            tier_score = 25.0
+
+        # Count p50+ as above benchmark
+        if actual_value >= p50:
+            metrics_above_p50 += 1
+
+        comparisons.append({
+            "metric": metric_name,
+            "actual": actual_value,
+            "benchmark_p50": p50,
+            "benchmark_p25": p25,
+            "benchmark_p75": p75,
+            "benchmark_p90": p90,
+            "tier": tier,
+            "vs_benchmark": "above" if actual_value >= p50 else "below",
+        })
+
+    # Calculate overall score: average of individual metric tier scores
+    if comparisons:
+        avg_tier_score = sum(c.get("tier_score", 50.0) for c in comparisons) / len(comparisons)
+        # Weight by how many metrics beat p50
+        p50_ratio = metrics_above_p50 / total_metrics if total_metrics > 0 else 0.5
+        score = p50_ratio * 100.0
+    else:
+        score = 50.0
+
+    return RuleResult(
+        rule="performance_vs_benchmarks",
+        level=level,
+        window=window,
+        score=score,
+        findings={
+            "comparisons": comparisons,
+            "benchmarks_available": True,
+            "metrics_above_p50": metrics_above_p50,
+            "total_metrics": total_metrics,
+            "p50_ratio": metrics_above_p50 / total_metrics if total_metrics > 0 else 0.0,
+        },
+    )
