@@ -362,17 +362,29 @@ def audit_run(
     html_output: str | None = typer.Option(
         None, help="Optional output path for HTML report"
     ),
+    pdf_output: str | None = typer.Option(
+        None, help="Optional output path for PDF report"
+    ),
+    format: str = typer.Option(
+        "md",
+        help="Output format(s): md, html, pdf, or comma-separated (e.g., 'md,pdf')",
+    ),
+    upload: str | None = typer.Option(
+        None, help="Optional GCS upload URI (e.g., 'gs://bucket/prefix/report.pdf')"
+    ),
     assets_dir: str | None = typer.Option(
         None,
         help="Optional directory to save chart images (e.g., 'reports/assets' or 'gs://bucket/prefix')",
     ),
 ) -> None:
-    """Run audit and optionally render Markdown and/or HTML reports with optional visuals."""
+    """Run audit and optionally render Markdown, HTML, and/or PDF reports with optional visuals."""
     from datetime import datetime
 
     import yaml
 
     from ..render.renderer import ReportRenderer
+    from ..render.pdf import write_pdf
+    from ..storage.gcs import upload_file_to_gcs
 
     # Run audit with error handling
     try:
@@ -428,25 +440,62 @@ def audit_run(
     assets_path = Path(assets_dir) if assets_dir else None
     renderer = ReportRenderer(assets_dir=assets_path)
 
-    # Generate Markdown if requested
-    if output:
+    # Parse format string
+    formats = [f.strip().lower() for f in format.split(",")]
+
+    # Generate Markdown if requested (via --output or --format)
+    if output or "md" in formats:
         md = renderer.render_markdown(data)
-        write_text(output, md)
-        typer.echo(f"Markdown report written to {output}")
-        if assets_dir:
+        if output:
+            write_text(output, md)
+            typer.echo(f"Markdown report written to {output}")
+        elif "md" in formats and not html_output and not pdf_output:
+            # Output to console if --format md but no explicit output path
+            typer.echo(md)
+        if assets_dir and output:
             typer.echo(f"Chart images saved to {assets_dir}")
 
-    # Generate HTML if requested
-    if html_output:
+    # Generate HTML if requested (via --html-output or --format)
+    if html_output or "html" in formats:
         html = renderer.render_html(data)
-        write_text(html_output, html)
-        typer.echo(f"HTML report written to {html_output}")
+        html_path = html_output or f"{tenant_name}_audit_{datetime.now().strftime('%Y%m%d')}.html"
+        write_text(html_path, html)
+        typer.echo(f"HTML report written to {html_path}")
         if assets_dir:
             typer.echo(f"Chart images saved to {assets_dir}")
 
-    # If neither specified, output Markdown to console
-    if not output and not html_output:
-        # Don't save charts when outputting to console
+    # Generate PDF if requested (via --pdf-output or --format)
+    if pdf_output or "pdf" in formats:
+        try:
+            pdf_bytes = renderer.render_pdf(data)
+            pdf_path = pdf_output or f"{tenant_name}_audit_{datetime.now().strftime('%Y%m%d')}.pdf"
+            write_pdf(pdf_path, pdf_bytes)
+            typer.secho(f"PDF report written to {pdf_path}", fg=typer.colors.GREEN)
+
+            # Upload to GCS if requested
+            if upload:
+                try:
+                    gcs_url = upload_file_to_gcs(
+                        gcs_uri=upload,
+                        content_bytes=pdf_bytes,
+                        content_type="application/pdf",
+                        make_public=False,
+                    )
+                    typer.secho(f"PDF uploaded to: {gcs_url}", fg=typer.colors.GREEN)
+                except (ValueError, RuntimeError) as e:
+                    typer.secho(f"Failed to upload to GCS: {e}", fg=typer.colors.RED, err=True)
+                    raise typer.Exit(code=1) from None
+
+        except RuntimeError as e:
+            typer.secho(f"PDF generation failed: {e}", fg=typer.colors.RED, err=True)
+            typer.secho(
+                "Ensure WeasyPrint is properly installed. See docs/pdf-export.md for instructions.",
+                fg=typer.colors.YELLOW,
+            )
+            raise typer.Exit(code=1) from None
+
+    # If no outputs specified, output Markdown to console
+    if not output and not html_output and not pdf_output and not formats:
         renderer_console = ReportRenderer(assets_dir=None)
         md = renderer_console.render_markdown(data)
         typer.echo(md)
@@ -457,9 +506,21 @@ def run_audit_skill(
     tenant_id: str = typer.Option(..., help="Tenant identifier from configs/tenants.yaml"),
     audit_config: str = typer.Option(..., help="Path to audit YAML config"),
     output_dir: str = typer.Option("reports/", help="Output directory for reports"),
+    format: str = typer.Option(
+        "md,html",
+        help="Output format(s): md, html, pdf, or comma-separated (e.g., 'md,html,pdf')",
+    ),
+    upload: str | None = typer.Option(
+        None, help="Optional GCS upload URI for PDF (e.g., 'gs://bucket/prefix/report.pdf')"
+    ),
     assets_dir: str | None = typer.Option(
         None,
         help="Optional directory to save chart images (e.g., 'reports/assets')",
+    ),
+    sheets_output: bool = typer.Option(
+        False,
+        "--sheets-output",
+        help="Export audit data to Google Sheets (requires GOOGLE_APPLICATION_CREDENTIALS)",
     ),
 ) -> None:
     """Run complete audit workflow using Claude skills orchestration.
@@ -467,20 +528,34 @@ def run_audit_skill(
     This command orchestrates the entire audit process:
     - Validates tenant configuration
     - Runs audit analysis with weighted scoring
-    - Generates professional Markdown and HTML reports with visuals and evidence appendix
+    - Generates professional Markdown, HTML, and/or PDF reports with visuals and evidence appendix
+    - Optionally exports data to Google Sheets for drill-down analysis
+    - Optionally uploads PDF to Google Cloud Storage
     - Saves all outputs to the specified directory
 
-    Example:
-        psn skills audit --tenant-id puttery --audit-config configs/audit_puttery.yaml --assets-dir reports/assets
+    Examples:
+        psn skills audit --tenant-id puttery --audit-config configs/audit_puttery.yaml
+        psn skills audit --tenant-id puttery --audit-config configs/audit_puttery.yaml --format md,html,pdf
+        psn skills audit --tenant-id puttery --audit-config configs/audit_puttery.yaml --format pdf --upload gs://bucket/audits/report.pdf
     """
     skill = AuditWorkflowSkill()
+
+    # Parse formats
+    formats = [f.strip().lower() for f in format.split(",")]
+
     context = {
         "tenant_id": tenant_id,
         "audit_config": audit_config,
         "output_dir": output_dir,
+        "formats": formats,
+        "sheets_output": sheets_output,
     }
+
     if assets_dir:
         context["assets_dir"] = assets_dir
+
+    if upload:
+        context["gcs_upload_uri"] = upload
 
     result = skill.execute(context)
 
@@ -489,6 +564,16 @@ def run_audit_skill(
         typer.echo("\nReports generated:")
         typer.echo(f"  Markdown: {result.data['markdown_report']}")
         typer.echo(f"  HTML: {result.data['html_report']}")
+
+        if "pdf_report" in result.data:
+            typer.echo(f"  PDF: {result.data['pdf_report']}")
+
+        if "pdf_gcs_url" in result.data:
+            typer.echo(f"  PDF (GCS): {result.data['pdf_gcs_url']}")
+
+        if result.data.get("sheet_url"):
+            typer.echo("\n📊 Google Sheets:")
+            typer.echo(f"  {result.data['sheet_url']}")
     else:
         typer.secho(f"❌ {result.message}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)

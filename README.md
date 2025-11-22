@@ -244,6 +244,14 @@ META_ACCESS_TOKEN=your_access_token
 PSN_GCP_PROJECT_ID=fleming-424413
 PSN_BQ_DATASET=paid_social
 
+# Claude API for AI-powered insights (optional)
+ANTHROPIC_API_KEY=sk-ant-api03-...
+
+# Google Sheets integration (optional)
+# Path to service account JSON credentials for Google Sheets API
+# See docs/google-sheets-setup.md for detailed setup instructions
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
+
 # Reddit
 REDDIT_CLIENT_ID=your_client_id
 REDDIT_CLIENT_SECRET=your_client_secret
@@ -260,6 +268,31 @@ TIKTOK_APP_SECRET=your_app_secret
 TWITTER_API_KEY=your_api_key
 TWITTER_API_SECRET=your_api_secret
 ```
+
+### Google Sheets Integration
+
+PaidSocialNav supports exporting audit data to Google Sheets for interactive data exploration and stakeholder sharing. When enabled, audit reports will:
+
+- Export structured data to a new Google Sheet with three tabs:
+  - **Executive Summary**: Overall score, key metrics, and insights summary
+  - **Rule Details**: Complete rule-by-rule breakdown with conditional formatting
+  - **Raw Data**: Full audit data for custom analysis
+- Include a "View Data in Google Sheets" button in HTML reports
+- Display the sheet URL in CLI output
+
+**Setup:**
+1. Follow the detailed instructions in [docs/google-sheets-setup.md](docs/google-sheets-setup.md)
+2. Configure `GOOGLE_APPLICATION_CREDENTIALS` environment variable
+3. Use the `--sheets-output` flag when running audits:
+
+```bash
+psn skills audit \
+  --tenant-id puttery \
+  --audit-config configs/audit_puttery.yaml \
+  --sheets-output
+```
+
+**Note:** Google Sheets integration is completely optional. Audits will run successfully without it.
 
 ## CI/CD
 
