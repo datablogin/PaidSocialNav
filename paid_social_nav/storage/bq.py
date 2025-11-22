@@ -226,23 +226,30 @@ def load_benchmarks_csv(
 ) -> int:
     """Load benchmarks from CSV file into benchmarks_performance table.
 
-    Uses atomic staging table approach to prevent data loss if load fails.
+    Uses atomic table replacement to prevent data loss and race conditions.
+    Validates CSV data before creating any staging tables.
 
     Args:
         project_id: GCP project ID (validated against SQL injection)
         dataset: BigQuery dataset name (validated against SQL injection)
-        csv_path: Path to CSV file (can be absolute or relative to CWD)
+        csv_path: Path to CSV file (absolute or relative to CWD)
+                 Must not contain path traversal sequences (.., ~)
 
     Returns:
         Number of rows loaded
 
     Raises:
-        ValueError: If project_id or dataset contains invalid characters
+        ValueError: If inputs contain invalid characters or CSV data is malformed
         FileNotFoundError: If CSV file doesn't exist
         RuntimeError: If load fails
+
+    Note:
+        Path security: Only loads from paths without traversal sequences.
+        Concurrent access: Uses unique staging table names to prevent conflicts.
     """
     import csv
     import json
+    import os
     import re
     import uuid
     from io import BytesIO
@@ -254,22 +261,28 @@ def load_benchmarks_csv(
     if not re.match(r"^[A-Za-z0-9_]+$", dataset):
         raise ValueError("Invalid dataset: must contain only alphanumeric or underscore characters")
 
-    client = bigquery.Client(project=project_id)
-
-    # Ensure main table exists
-    ensure_benchmarks_table(project_id, dataset)
-
-    table_id = f"{project_id}.{dataset}.benchmarks_performance"
-
-    # Read CSV and validate
+    # Validate CSV path to prevent path traversal attacks
     csv_file = Path(csv_path)
-    if not csv_file.exists():
+    # Resolve to absolute path and check for traversal
+    try:
+        resolved_path = csv_file.resolve(strict=True)
+    except Exception as e:
+        raise FileNotFoundError(f"Invalid CSV path: {csv_path}") from e
+
+    # Check for path traversal sequences
+    if ".." in csv_path or "~" in csv_path:
+        raise ValueError(f"Path traversal not allowed in csv_path: {csv_path}")
+
+    if not resolved_path.exists():
         raise FileNotFoundError(f"Benchmarks CSV not found: {csv_path}")
 
+    # Validate CSV and prepare rows BEFORE creating any tables
     rows = []
     required_cols = {"industry", "region", "spend_band", "metric_name", "p25", "p50", "p75", "p90"}
+    valid_industries = {"retail", "healthcare", "finance", "technology", "ecommerce"}  # Extensible
+    valid_regions = {"US", "EU", "APAC", "GLOBAL"}  # Extensible
 
-    with csv_file.open("r") as f:
+    with resolved_path.open("r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
 
         # Validate CSV schema
@@ -280,6 +293,21 @@ def load_benchmarks_csv(
             raise ValueError(f"CSV missing required columns: {missing}")
 
         for row_num, row in enumerate(reader, start=2):  # Start at 2 (header is line 1)
+            # Validate string fields
+            industry = row.get("industry", "").strip()
+            region = row.get("region", "").strip()
+            spend_band = row.get("spend_band", "").strip()
+            metric_name = row.get("metric_name", "").strip()
+
+            if not industry or len(industry) > 50:
+                raise ValueError(f"Row {row_num}: industry must be non-empty and <= 50 chars")
+            if not region or len(region) > 20:
+                raise ValueError(f"Row {row_num}: region must be non-empty and <= 20 chars")
+            if not spend_band or len(spend_band) > 20:
+                raise ValueError(f"Row {row_num}: spend_band must be non-empty and <= 20 chars")
+            if not metric_name or len(metric_name) > 50:
+                raise ValueError(f"Row {row_num}: metric_name must be non-empty and <= 50 chars")
+
             # Safely convert percentile values
             p25 = _safe_float(row.get("p25"))
             p50 = _safe_float(row.get("p50"))
@@ -296,10 +324,10 @@ def load_benchmarks_csv(
                     )
 
             benchmark_row = {
-                "industry": row["industry"],
-                "region": row["region"],
-                "spend_band": row["spend_band"],
-                "metric_name": row["metric_name"],
+                "industry": industry,
+                "region": region,
+                "spend_band": spend_band,
+                "metric_name": metric_name,
                 "p25": p25,
                 "p50": p50,
                 "p75": p75,
@@ -310,13 +338,21 @@ def load_benchmarks_csv(
     if not rows:
         return 0
 
-    # Use atomic staging table approach (like load_json_rows)
+    # Now create client and tables (after validation succeeds)
+    client = bigquery.Client(project=project_id)
+
+    # Ensure main table exists
+    ensure_benchmarks_table(project_id, dataset)
+
+    table_id = f"{project_id}.{dataset}.benchmarks_performance"
+
+    # Use atomic table replacement (safer than MERGE for full refresh)
     unique_id = uuid.uuid4().hex[:8]
-    stg_table = f"{project_id}.{dataset}.__stg_benchmarks_{unique_id}"
+    temp_table = f"{project_id}.{dataset}.__temp_benchmarks_{unique_id}"
 
     try:
-        # Create staging table with same schema
-        stg_schema = [
+        # Create temporary table with same schema and clustering
+        temp_schema = [
             bigquery.SchemaField("industry", "STRING", mode="REQUIRED"),
             bigquery.SchemaField("region", "STRING", mode="REQUIRED"),
             bigquery.SchemaField("spend_band", "STRING", mode="REQUIRED"),
@@ -326,10 +362,11 @@ def load_benchmarks_csv(
             bigquery.SchemaField("p75", "FLOAT64", mode="NULLABLE"),
             bigquery.SchemaField("p90", "FLOAT64", mode="NULLABLE"),
         ]
-        stg_table_obj = bigquery.Table(stg_table, schema=stg_schema)
-        client.create_table(stg_table_obj)
+        temp_table_obj = bigquery.Table(temp_table, schema=temp_schema)
+        temp_table_obj.clustering_fields = ["industry", "region", "spend_band"]
+        client.create_table(temp_table_obj)
 
-        # Load to staging using batch load (more efficient than streaming)
+        # Load to temporary table using batch load
         job_config = bigquery.LoadJobConfig()
         job_config.source_format = bigquery.SourceFormat.NEWLINE_DELIMITED_JSON
 
@@ -338,22 +375,20 @@ def load_benchmarks_csv(
             buf.write((json.dumps(r) + "\n").encode("utf-8"))
         buf.seek(0)
 
-        load_job = client.load_table_from_file(buf, stg_table, job_config=job_config)
+        load_job = client.load_table_from_file(buf, temp_table, job_config=job_config)
         load_job.result()  # Wait for load to complete
 
-        # Atomically replace main table data with staging data
-        # Using MERGE with DELETE + INSERT pattern for full refresh
-        merge_sql = f"""
-        MERGE `{table_id}` T
-        USING `{stg_table}` S
-        ON FALSE  -- Never match, always insert
-        WHEN NOT MATCHED BY SOURCE THEN DELETE
-        WHEN NOT MATCHED BY TARGET THEN INSERT ROW
+        # Atomically swap tables using CREATE OR REPLACE
+        # This is safer than MERGE for full refresh as it's a single atomic operation
+        swap_sql = f"""
+        CREATE OR REPLACE TABLE `{table_id}`
+        CLUSTER BY industry, region, spend_band
+        AS SELECT * FROM `{temp_table}`
         """
-        client.query(merge_sql).result()
+        client.query(swap_sql).result()
 
         return len(rows)
 
     finally:
-        # Clean up staging table
-        client.delete_table(stg_table, not_found_ok=True)
+        # Clean up temporary table
+        client.delete_table(temp_table, not_found_ok=True)

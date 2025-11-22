@@ -162,7 +162,8 @@ reports/
 !reports/README.md
 
 # Data directory - ignore most files but keep benchmarks and templates
+# Note: Exceptions (!) must come before the general ignore pattern
+data/
 !data/README.md
 !data/benchmarks_performance.csv
 !data/*_template.csv
-data/

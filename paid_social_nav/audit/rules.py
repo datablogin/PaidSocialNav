@@ -210,17 +210,44 @@ def performance_vs_benchmarks(
 ) -> RuleResult:
     """Compare actual performance metrics against industry benchmarks.
 
+    Evaluates campaign performance by comparing actual metrics (CTR, frequency, etc.)
+    against industry percentile benchmarks. Returns a score based on the percentage
+    of metrics that meet or exceed the 50th percentile (median) benchmark.
+
+    Metric Skipping Behavior:
+        - Metrics are skipped if not present in benchmarks dict
+        - Metrics are skipped if any percentile (p25, p50, p75, p90) is None
+        - Skipped metrics do not count toward the score calculation
+        - If all metrics are skipped, returns neutral score (50.0)
+
     Args:
-        actual_metrics: Dict of metric_name -> actual_value (e.g., {"ctr": 0.015, "frequency": 2.5})
-        benchmarks: Dict of metric_name -> percentiles (e.g., {"ctr": {"p25": 0.01, "p50": 0.015, "p75": 0.022}})
-        level: Entity level being audited
-        window: Time window for the metrics
+        actual_metrics: Dict of metric_name -> actual_value
+                       Example: {"ctr": 0.015, "frequency": 2.5}
+        benchmarks: Dict of metric_name -> percentiles dict
+                   Example: {"ctr": {"p25": 0.01, "p50": 0.015, "p75": 0.022, "p90": 0.030}}
+        level: Entity level being audited (campaign, adset, ad)
+        window: Time window for the metrics (last_28d, Q4, etc.)
 
     Returns:
-        RuleResult with score based on how many metrics meet or exceed p50 benchmark
+        RuleResult with:
+            - score: (metrics_above_p50 / total_metrics) * 100
+            - findings: Dict with comparisons, tier classifications, and counts
+
+    Note:
+        Requires all four percentiles (p25, p50, p75, p90) for each metric.
+        Incomplete benchmark data causes the metric to be skipped.
     """
+    from ..core.logging_config import get_logger
+
+    logger = get_logger(__name__)
+
     if not benchmarks or not actual_metrics:
         # No benchmarks available - neutral score
+        if benchmarks is None:
+            logger.warning(
+                "Benchmark rule enabled but no benchmarks available. "
+                "Ensure industry/region/spend_band are configured in audit config."
+            )
         return RuleResult(
             rule="performance_vs_benchmarks",
             level=level,
@@ -237,9 +264,11 @@ def performance_vs_benchmarks(
     comparisons = []
     metrics_above_p50 = 0
     total_metrics = 0
+    skipped_metrics = []
 
     for metric_name, actual_value in actual_metrics.items():
         if metric_name not in benchmarks:
+            skipped_metrics.append(f"{metric_name} (not in benchmarks)")
             continue
 
         bench = benchmarks[metric_name]
@@ -252,6 +281,7 @@ def performance_vs_benchmarks(
 
         # Skip metrics with incomplete benchmark data
         if any(v is None for v in [p25, p50, p75, p90]):
+            skipped_metrics.append(f"{metric_name} (incomplete percentiles)")
             continue
 
         total_metrics += 1
@@ -283,11 +313,22 @@ def performance_vs_benchmarks(
             "vs_benchmark": "above" if actual_value >= p50 else "below",
         })
 
+    # Log if metrics were skipped
+    if skipped_metrics:
+        logger.info(
+            f"Benchmark comparison skipped {len(skipped_metrics)} metrics: {', '.join(skipped_metrics[:3])}"
+            + (f" and {len(skipped_metrics) - 3} more" if len(skipped_metrics) > 3 else "")
+        )
+
     # Calculate overall score: weight by how many metrics beat p50
     if comparisons:
         p50_ratio = metrics_above_p50 / total_metrics if total_metrics > 0 else 0.5
         score = p50_ratio * 100.0
     else:
+        logger.warning(
+            "No benchmark comparisons could be made. "
+            "Check that benchmarks exist for the configured metrics."
+        )
         score = 50.0
 
     return RuleResult(
