@@ -256,20 +256,14 @@ def performance_vs_benchmarks(
 
         if actual_value >= p90:
             tier = "p90+"
-            tier_score = 100.0
         elif actual_value >= p75:
             tier = "p75-p90"
-            tier_score = 85.0
         elif actual_value >= p50:
             tier = "p50-p75"
-            tier_score = 70.0
-            metrics_above_p50 += 1
         elif actual_value >= p25:
             tier = "p25-p50"
-            tier_score = 50.0
         else:
             tier = "below_p25"
-            tier_score = 25.0
 
         # Count p50+ as above benchmark
         if actual_value >= p50:
@@ -286,10 +280,8 @@ def performance_vs_benchmarks(
             "vs_benchmark": "above" if actual_value >= p50 else "below",
         })
 
-    # Calculate overall score: average of individual metric tier scores
+    # Calculate overall score: weight by how many metrics beat p50
     if comparisons:
-        avg_tier_score = sum(c.get("tier_score", 50.0) for c in comparisons) / len(comparisons)
-        # Weight by how many metrics beat p50
         p50_ratio = metrics_above_p50 / total_metrics if total_metrics > 0 else 0.5
         score = p50_ratio * 100.0
     else:

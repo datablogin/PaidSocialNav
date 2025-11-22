@@ -23,8 +23,6 @@ def mock_bq_client():
     # Mock insights_rollups data for KPIs
     def query_insights_rollups(sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
         """Return realistic KPI data for different windows."""
-        level = params.get("level", "campaign")
-
         # Return data for Q4 and last_30d windows
         return [
             {
@@ -51,7 +49,6 @@ def mock_bq_client():
     def query_budget_pacing(sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
         """Return realistic spend data by window."""
         window = params.get("window")
-        level = params.get("level", "campaign")
 
         spend_map = {
             "Q4": 12500.00,
@@ -64,8 +61,6 @@ def mock_bq_client():
     def query_budget_concentration(sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
         """Return realistic top-N concentration data."""
         window = params.get("window")
-        top_n = params.get("top_n", 5)
-        level = params.get("level", "campaign")
 
         # Simulate top-5 campaigns accounting for 65% of spend (healthy)
         concentration_map = {
@@ -78,9 +73,6 @@ def mock_bq_client():
     # Mock creative mix data
     def query_creative_mix(sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
         """Return realistic creative diversity data."""
-        window = params.get("window")
-        level = params.get("level", "campaign")
-
         # Simulate balanced creative mix
         return [
             {
