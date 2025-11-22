@@ -23,6 +23,9 @@ class AuditConfig:
     weights: dict[str, float]
     thresholds: dict[str, Any]
     top_n: int | None = None
+    industry: str | None = None
+    region: str | None = None
+    spend_band: str | None = None
 
 
 @dataclass(**dataclass_kwargs)
@@ -188,6 +191,28 @@ class AuditEngine:
                 weighted_sum += w * rr.score
                 weight_total += w
 
+        # 6) Performance vs Benchmarks
+        if "performance_vs_benchmarks" in self.cfg.weights:
+            # Only run if benchmark mapping is configured
+            if self.cfg.industry and self.cfg.region and self.cfg.spend_band:
+                for window in self.cfg.windows:
+                    actual_metrics = self._fetch_actual_metrics(window=window)
+                    benchmarks = self._fetch_benchmarks(
+                        industry=self.cfg.industry,
+                        region=self.cfg.region,
+                        spend_band=self.cfg.spend_band,
+                    )
+                    rr = rules.performance_vs_benchmarks(
+                        actual_metrics=actual_metrics,
+                        benchmarks=benchmarks,
+                        level=self.cfg.level,
+                        window=window,
+                    )
+                    per_rule.append(self._serialize_rr(rr))
+                    w = float(self.cfg.weights.get("performance_vs_benchmarks", 0.0))
+                    weighted_sum += w * rr.score
+                    weight_total += w
+
         if weight_total <= 0:
             overall = 0.0
         else:
@@ -295,6 +320,65 @@ class AuditEngine:
             return 0.0
         return float(rows[0].get("spend") or 0.0)
 
+    def _fetch_actual_metrics(self, window: str) -> dict[str, float]:
+        """Fetch actual performance metrics for benchmark comparison."""
+        sql = f"""
+        SELECT
+          AVG(ctr) AS ctr,
+          AVG(frequency) AS frequency,
+          SAFE_DIVIDE(SUM(conversions), NULLIF(SUM(clicks), 0)) AS conv_rate,
+          SAFE_DIVIDE(SUM(spend), NULLIF(SUM(clicks), 0)) AS cpc,
+          SAFE_DIVIDE(SUM(spend) * 1000, NULLIF(SUM(impressions), 0)) AS cpm
+        FROM `{self.dataset}.insights_rollups`
+        WHERE level = @level AND `window` = @window
+        """
+        rows = self.bq.query_rows(
+            sql, params={"level": self.cfg.level, "window": window}
+        )
+        if not rows:
+            return {}
+
+        row = rows[0]
+        metrics = {}
+        for key in ("ctr", "frequency", "conv_rate", "cpc", "cpm"):
+            val = row.get(key)
+            if val is not None:
+                metrics[key] = float(val)
+        return metrics
+
+    def _fetch_benchmarks(
+        self, industry: str, region: str, spend_band: str
+    ) -> dict[str, dict[str, float]]:
+        """Fetch benchmark percentiles for the given industry/region/spend_band."""
+        sql = f"""
+        SELECT metric_name, p25, p50, p75, p90
+        FROM `{self.dataset}.benchmarks_performance`
+        WHERE industry = @industry
+          AND region = @region
+          AND spend_band = @spend_band
+        """
+        rows = self.bq.query_rows(
+            sql,
+            params={
+                "industry": industry,
+                "region": region,
+                "spend_band": spend_band,
+            },
+        )
+
+        benchmarks = {}
+        for row in rows:
+            metric_name = row.get("metric_name")
+            if not metric_name:
+                continue
+            benchmarks[metric_name] = {
+                "p25": float(row["p25"]) if row.get("p25") is not None else None,
+                "p50": float(row["p50"]) if row.get("p50") is not None else None,
+                "p75": float(row["p75"]) if row.get("p75") is not None else None,
+                "p90": float(row["p90"]) if row.get("p90") is not None else None,
+            }
+        return benchmarks
+
     @staticmethod
     def _serialize_rr(rr: rules.RuleResult) -> dict[str, Any]:
         return {
@@ -317,4 +401,7 @@ def _load_config(path: str) -> AuditConfig:
         weights=dict(data.get("weights", {})),
         thresholds=dict(data.get("thresholds", {})),
         top_n=data.get("top_n"),
+        industry=data.get("industry"),
+        region=data.get("region"),
+        spend_band=data.get("spend_band"),
     )

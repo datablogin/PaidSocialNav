@@ -98,6 +98,28 @@ def ensure_dim_ad_table(project_id: str, dataset: str) -> None:
     client.create_table(table, exists_ok=True)
 
 
+def ensure_benchmarks_table(project_id: str, dataset: str) -> None:
+    """Ensure benchmarks_performance table exists with proper schema and clustering."""
+    client = bigquery.Client(project=project_id)
+    table_id = f"{project_id}.{dataset}.benchmarks_performance"
+
+    schema = [
+        bigquery.SchemaField("industry", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("region", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("spend_band", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("metric_name", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("p25", "FLOAT64", mode="NULLABLE"),
+        bigquery.SchemaField("p50", "FLOAT64", mode="NULLABLE"),
+        bigquery.SchemaField("p75", "FLOAT64", mode="NULLABLE"),
+        bigquery.SchemaField("p90", "FLOAT64", mode="NULLABLE"),
+    ]
+
+    table = bigquery.Table(table_id, schema=schema)
+    # Add clustering for efficient queries on industry, region, spend_band
+    table.clustering_fields = ["industry", "region", "spend_band"]
+    client.create_table(table, exists_ok=True)
+
+
 def _staging_table(project_id: str, dataset: str, unique_id: str | None = None) -> str:
     """Generate staging table name with optional unique ID to prevent race conditions."""
     if unique_id:
@@ -187,3 +209,183 @@ def load_json_rows(
     finally:
         # Clean up staging table
         client.delete_table(stg_table, not_found_ok=True)
+
+
+def _safe_float(value: str | None) -> float | None:
+    """Safely convert a value to float, returning None for invalid values."""
+    if not value or (isinstance(value, str) and not value.strip()):
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def load_benchmarks_csv(
+    *, project_id: str, dataset: str, csv_path: str
+) -> int:
+    """Load benchmarks from CSV file into benchmarks_performance table.
+
+    Uses atomic table replacement to prevent data loss and race conditions.
+    Validates CSV data before creating any staging tables.
+
+    Args:
+        project_id: GCP project ID (validated against SQL injection)
+        dataset: BigQuery dataset name (validated against SQL injection)
+        csv_path: Path to CSV file (absolute or relative to CWD)
+                 Must not contain path traversal sequences (.., ~)
+
+    Returns:
+        Number of rows loaded
+
+    Raises:
+        ValueError: If inputs contain invalid characters or CSV data is malformed
+        FileNotFoundError: If CSV file doesn't exist
+        RuntimeError: If load fails
+
+    Note:
+        Path security: Only loads from paths without traversal sequences.
+        Concurrent access: Uses unique staging table names to prevent conflicts.
+    """
+    import csv
+    import json
+    import re
+    import uuid
+    from io import BytesIO
+    from pathlib import Path
+
+    # Validate inputs to prevent SQL injection
+    if not re.match(r"^[A-Za-z0-9_\-]+$", project_id):
+        raise ValueError("Invalid project_id: must contain only alphanumeric, underscore, or hyphen characters")
+    if not re.match(r"^[A-Za-z0-9_]+$", dataset):
+        raise ValueError("Invalid dataset: must contain only alphanumeric or underscore characters")
+
+    # Validate CSV path to prevent path traversal attacks
+    csv_file = Path(csv_path)
+    # Resolve to absolute path and check for traversal
+    try:
+        resolved_path = csv_file.resolve(strict=True)
+    except Exception as e:
+        raise FileNotFoundError(f"Invalid CSV path: {csv_path}") from e
+
+    # Check for path traversal sequences
+    if ".." in csv_path or "~" in csv_path:
+        raise ValueError(f"Path traversal not allowed in csv_path: {csv_path}")
+
+    if not resolved_path.exists():
+        raise FileNotFoundError(f"Benchmarks CSV not found: {csv_path}")
+
+    # Validate CSV and prepare rows BEFORE creating any tables
+    rows = []
+    required_cols = {"industry", "region", "spend_band", "metric_name", "p25", "p50", "p75", "p90"}
+
+    with resolved_path.open("r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+
+        # Validate CSV schema
+        if not reader.fieldnames:
+            raise ValueError("CSV file is empty or has no header")
+        if not required_cols.issubset(set(reader.fieldnames)):
+            missing = required_cols - set(reader.fieldnames)
+            raise ValueError(f"CSV missing required columns: {missing}")
+
+        for row_num, row in enumerate(reader, start=2):  # Start at 2 (header is line 1)
+            # Validate string fields
+            industry = row.get("industry", "").strip()
+            region = row.get("region", "").strip()
+            spend_band = row.get("spend_band", "").strip()
+            metric_name = row.get("metric_name", "").strip()
+
+            if not industry or len(industry) > 50:
+                raise ValueError(f"Row {row_num}: industry must be non-empty and <= 50 chars")
+            if not region or len(region) > 20:
+                raise ValueError(f"Row {row_num}: region must be non-empty and <= 20 chars")
+            if not spend_band or len(spend_band) > 20:
+                raise ValueError(f"Row {row_num}: spend_band must be non-empty and <= 20 chars")
+            if not metric_name or len(metric_name) > 50:
+                raise ValueError(f"Row {row_num}: metric_name must be non-empty and <= 50 chars")
+
+            # Safely convert percentile values
+            p25 = _safe_float(row.get("p25"))
+            p50 = _safe_float(row.get("p50"))
+            p75 = _safe_float(row.get("p75"))
+            p90 = _safe_float(row.get("p90"))
+
+            # Validate percentile ordering (if all present)
+            if all(v is not None for v in [p25, p50, p75, p90]):
+                if not (p25 <= p50 <= p75 <= p90):
+                    raise ValueError(
+                        f"Invalid percentile ordering in row {row_num}: "
+                        f"p25={p25}, p50={p50}, p75={p75}, p90={p90}. "
+                        f"Expected p25 <= p50 <= p75 <= p90"
+                    )
+
+            benchmark_row = {
+                "industry": industry,
+                "region": region,
+                "spend_band": spend_band,
+                "metric_name": metric_name,
+                "p25": p25,
+                "p50": p50,
+                "p75": p75,
+                "p90": p90,
+            }
+            rows.append(benchmark_row)
+
+    if not rows:
+        return 0
+
+    # Now create client and tables (after validation succeeds)
+    client = bigquery.Client(project=project_id)
+
+    # Ensure main table exists
+    ensure_benchmarks_table(project_id, dataset)
+
+    table_id = f"{project_id}.{dataset}.benchmarks_performance"
+
+    # Use atomic table replacement (safer than MERGE for full refresh)
+    unique_id = uuid.uuid4().hex[:8]
+    temp_table = f"{project_id}.{dataset}.__temp_benchmarks_{unique_id}"
+
+    try:
+        # Create temporary table with same schema and clustering
+        temp_schema = [
+            bigquery.SchemaField("industry", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("region", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("spend_band", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("metric_name", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("p25", "FLOAT64", mode="NULLABLE"),
+            bigquery.SchemaField("p50", "FLOAT64", mode="NULLABLE"),
+            bigquery.SchemaField("p75", "FLOAT64", mode="NULLABLE"),
+            bigquery.SchemaField("p90", "FLOAT64", mode="NULLABLE"),
+        ]
+        temp_table_obj = bigquery.Table(temp_table, schema=temp_schema)
+        temp_table_obj.clustering_fields = ["industry", "region", "spend_band"]
+        client.create_table(temp_table_obj)
+
+        # Load to temporary table using batch load
+        job_config = bigquery.LoadJobConfig()
+        job_config.source_format = bigquery.SourceFormat.NEWLINE_DELIMITED_JSON
+
+        buf = BytesIO()
+        for r in rows:
+            buf.write((json.dumps(r) + "\n").encode("utf-8"))
+        buf.seek(0)
+
+        load_job = client.load_table_from_file(buf, temp_table, job_config=job_config)
+        load_job.result()  # Wait for load to complete
+
+        # Atomically swap tables using CREATE OR REPLACE
+        # This is safer than MERGE for full refresh as it's a single atomic operation
+        swap_sql = f"""
+        CREATE OR REPLACE TABLE `{table_id}`
+        CLUSTER BY industry, region, spend_band
+        AS SELECT * FROM `{temp_table}`
+        """
+        client.query(swap_sql).result()
+
+        return len(rows)
+
+    finally:
+        # Clean up temporary table
+        client.delete_table(temp_table, not_found_ok=True)
