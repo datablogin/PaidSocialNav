@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,7 @@ import yaml
 from ..audit.engine import run_audit
 from ..core.logging_config import get_logger
 from ..core.tenants import get_tenant
+from ..insights.generator import InsightsGenerator
 from ..render.renderer import ReportRenderer, write_text
 from .base import BaseSkill, SkillResult
 
@@ -109,6 +111,20 @@ class AuditWorkflowSkill(BaseSkill):
                 message=f"Audit failed: {e}"
             )
 
+        # Step 3.5: Generate AI insights if Claude API key is available
+        insights = None
+        claude_api_key = os.getenv("ANTHROPIC_API_KEY")
+        if claude_api_key:
+            try:
+                generator = InsightsGenerator(claude_api_key)
+                insights = generator.generate_strategy(audit_result, tenant.id)
+            except Exception as e:
+                # Log error but continue - insights are optional enhancement
+                logger.warning(
+                    "Failed to generate AI insights, continuing without them",
+                    extra={"error": str(e)}
+                )
+
         # Step 4: Load config and prepare report data
         try:
             config_path = Path(context["audit_config"])
@@ -136,7 +152,11 @@ class AuditWorkflowSkill(BaseSkill):
             "audit_date": datetime.now().strftime("%Y-%m-%d"),
             "overall_score": audit_result.overall_score,
             "rules": audit_result.rules,
-            "recommendations": [],  # Will be populated in Phase 4
+            "recommendations": insights.get("recommendations", []) if insights else [],
+            "strengths": insights.get("strengths", []) if insights else [],
+            "issues": insights.get("issues", []) if insights else [],
+            "quick_wins": insights.get("quick_wins", []) if insights else [],
+            "roadmap": insights.get("roadmap", {}) if insights else {},
         }
 
         # Step 5: Generate reports
