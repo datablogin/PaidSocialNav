@@ -30,7 +30,7 @@ class MetaAdapter(BaseAdapter):
         self.timeout = timeout
 
     def _sanitize_error(self, error_data: dict[str, Any] | str) -> dict[str, Any] | str:
-        """Remove sensitive data from error responses to prevent token leakage.
+        """Recursively remove sensitive data from error responses to prevent token leakage.
 
         Args:
             error_data: Error response from API (dict or string)
@@ -39,18 +39,28 @@ class MetaAdapter(BaseAdapter):
             Sanitized error data with tokens redacted
         """
         if isinstance(error_data, dict):
-            # Create a copy to avoid modifying original
-            sanitized = error_data.copy()
-            # Remove any fields that might contain tokens
-            sensitive_keys = ["access_token", "token", "authorization", "api_key"]
-            for key in sensitive_keys:
-                if key in sanitized:
+            sanitized = {}
+            sensitive_keys = {"access_token", "token", "authorization", "api_key", "secret"}
+
+            for key, value in error_data.items():
+                # Check if key itself is sensitive
+                if key.lower() in sensitive_keys:
                     sanitized[key] = "***REDACTED***"
-                # Also check nested error objects
-                if "error" in sanitized and isinstance(sanitized["error"], dict):
-                    for nested_key in sensitive_keys:
-                        if nested_key in sanitized["error"]:
-                            sanitized["error"][nested_key] = "***REDACTED***"
+                # Recursively sanitize nested dicts
+                elif isinstance(value, dict):
+                    sanitized[key] = self._sanitize_error(value)
+                # Check if string values contain sensitive patterns
+                elif isinstance(value, str):
+                    # Check for common token patterns in the value
+                    if any(pattern in value.lower() for pattern in sensitive_keys):
+                        sanitized[key] = "***CONTAINS_SENSITIVE_DATA***"
+                    # Also check for OAuth token patterns (EAA, ya29, etc.)
+                    elif any(value.startswith(prefix) for prefix in ["EAA", "ya29.", "sk-", "ghp_"]):
+                        sanitized[key] = "***REDACTED***"
+                    else:
+                        sanitized[key] = value[:500]  # Limit string length
+                else:
+                    sanitized[key] = value
             return sanitized
         # For string errors, limit length to prevent accidental token exposure
         return str(error_data)[:500] if error_data else ""

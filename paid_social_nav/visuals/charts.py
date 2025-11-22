@@ -361,28 +361,31 @@ class ChartGenerator:
         Returns:
             Dict with 'path' and/or 'base64' keys
         """
-        result = {}
-
-        # Save to file if output_dir is set
-        if self.output_dir:
-            filepath = self.output_dir / f"{filename}.png"
-            try:
-                fig.savefig(filepath, dpi=self.dpi, bbox_inches="tight", format="png")
-                result["path"] = str(filepath)
-                logger.debug(f"Chart saved to {filepath}")
-            except (OSError, ValueError) as e:
-                logger.warning(f"Failed to save chart to {filepath}: {e}")
-
-        # Always generate base64 for embedding
         try:
-            buffer = BytesIO()
-            fig.savefig(buffer, dpi=self.dpi, bbox_inches="tight", format="png")
-            buffer.seek(0)
-            img_base64 = base64.b64encode(buffer.read()).decode("utf-8")
-            result["base64"] = img_base64
-            buffer.close()
-        except (OSError, ValueError) as e:
-            logger.warning(f"Failed to generate base64 for chart: {e}")
+            result = {}
 
-        plt.close(fig)
-        return result
+            # Save to file if output_dir is set
+            if self.output_dir:
+                filepath = self.output_dir / f"{filename}.png"
+                try:
+                    fig.savefig(filepath, dpi=self.dpi, bbox_inches="tight", format="png")
+                    result["path"] = str(filepath)
+                    logger.debug(f"Chart saved to {filepath}")
+                except (OSError, ValueError) as e:
+                    logger.warning(f"Failed to save chart to {filepath}: {e}")
+
+            # Always generate base64 for embedding
+            try:
+                buffer = BytesIO()
+                fig.savefig(buffer, dpi=self.dpi, bbox_inches="tight", format="png")
+                buffer.seek(0)
+                img_base64 = base64.b64encode(buffer.read()).decode("utf-8")
+                result["base64"] = img_base64
+                buffer.close()
+            except (OSError, ValueError) as e:
+                logger.warning(f"Failed to generate base64 for chart: {e}")
+
+            return result
+        finally:
+            # Ensure figure is always closed to prevent memory leaks
+            plt.close(fig)

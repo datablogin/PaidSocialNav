@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from google.cloud import bigquery
+from google.cloud.exceptions import NotFound
 
 INSIGHTS_TABLE = "fct_ad_insights_daily"
 
@@ -55,7 +56,8 @@ def ensure_dataset(project_id: str, dataset: str) -> None:
     ds_ref.location = "US"
     try:
         client.get_dataset(ds_ref.reference)
-    except Exception:
+    except NotFound:
+        # Dataset doesn't exist, create it
         client.create_dataset(ds_ref, exists_ok=True)
 
 
@@ -586,6 +588,14 @@ def upsert_dimension(
         # Build MERGE statement
         # Get all field names except the merge key
         field_names = [field.name for field in schema]
+
+        # Validate merge_key exists in schema
+        if merge_key not in field_names:
+            raise ValueError(
+                f"Invalid merge key '{merge_key}': not found in table schema. "
+                f"Available fields: {', '.join(field_names)}"
+            )
+
         update_fields = [f for f in field_names if f != merge_key]
 
         # Build UPDATE SET clause

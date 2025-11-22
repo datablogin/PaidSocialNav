@@ -125,6 +125,7 @@ class ReportRenderer:
         """
         charts = {}
         evidence = {}
+        chart_failures = []
 
         # Always create a basic chart generator for generating charts
         generator = self.chart_generator or ChartGenerator()
@@ -132,36 +133,56 @@ class ReportRenderer:
         rules = data.get("rules", [])
         tenant_name = data.get("tenant_name", "report")
 
-        # Generate charts
+        # Generate charts individually with error handling for each
+        # Creative mix chart
         try:
-            # Creative mix chart
             creative_chart = generator.generate_creative_mix_chart(rules, tenant_name)
             if creative_chart:
                 charts["creative_mix"] = creative_chart
+        except Exception as e:
+            chart_failures.append(("creative_mix", str(e)))
+            logger.warning(f"Failed to generate creative mix chart: {e}", exc_info=True)
 
-            # Pacing chart
+        # Pacing chart
+        try:
             pacing_chart = generator.generate_pacing_chart(rules, tenant_name)
             if pacing_chart:
                 charts["pacing"] = pacing_chart
+        except Exception as e:
+            chart_failures.append(("pacing", str(e)))
+            logger.warning(f"Failed to generate pacing chart: {e}", exc_info=True)
 
-            # Performance trends chart
+        # Performance trends chart
+        try:
             trends_chart = generator.generate_performance_trends_chart(
                 rules, tenant_name
             )
             if trends_chart:
                 charts["performance_trends"] = trends_chart
+        except Exception as e:
+            chart_failures.append(("performance_trends", str(e)))
+            logger.warning(f"Failed to generate performance trends chart: {e}", exc_info=True)
 
-            # Score distribution chart
+        # Score distribution chart
+        try:
             score_chart = generator.generate_score_distribution_chart(rules, tenant_name)
             if score_chart:
                 charts["score_distribution"] = score_chart
+        except Exception as e:
+            chart_failures.append(("score_distribution", str(e)))
+            logger.warning(f"Failed to generate score distribution chart: {e}", exc_info=True)
 
+        # Log summary of chart generation
+        if chart_failures:
+            logger.warning(
+                f"Generated {len(charts)}/4 charts. Failures: {', '.join(f[0] for f in chart_failures)}",
+                extra={"tenant": tenant_name, "failures": chart_failures},
+            )
+        else:
             logger.info(
-                f"Generated {len(charts)} charts for report",
+                f"Successfully generated all {len(charts)} charts for report",
                 extra={"tenant": tenant_name},
             )
-        except Exception as e:
-            logger.warning(f"Failed to generate some charts: {e}", exc_info=True)
 
         # Generate evidence appendix data
         try:

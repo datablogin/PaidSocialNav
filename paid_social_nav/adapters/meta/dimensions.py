@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from datetime import UTC, datetime
 from time import sleep
 from typing import Any
@@ -37,12 +38,35 @@ def _parse_timestamp(ts: str | None) -> str | None:
     """
     if not ts:
         return None
+
+    # Validate input is string type
+    if not isinstance(ts, str):
+        logger.warning(
+            f"Invalid timestamp type: expected str, got {type(ts).__name__}",
+            extra={"value": str(ts)[:100]},
+        )
+        return None
+
+    # Truncate very long strings to prevent log spam
+    ts_display = ts[:100] if len(ts) > 100 else ts
+
     try:
-        # Meta returns ISO format timestamps
-        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        # Meta returns ISO format timestamps, often with 'Z' suffix
+        normalized = ts.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
         return dt.isoformat()
-    except (ValueError, TypeError) as e:
-        logger.warning(f"Failed to parse timestamp '{ts}': {e}")
+    except ValueError as e:
+        logger.warning(
+            f"Failed to parse timestamp as ISO format: {e}",
+            extra={"timestamp": ts_display},
+        )
+        return None
+    except (AttributeError, TypeError) as e:
+        # Catch unexpected errors from malformed input
+        logger.error(
+            f"Unexpected error parsing timestamp: {e}",
+            extra={"timestamp": ts_display, "type": type(ts).__name__},
+        )
         return None
 
 
@@ -171,15 +195,18 @@ def sync_campaign_dimensions(
                 )
                 raise
             backoff_time = retry_backoff * (2**attempt)
+            # Add jitter to prevent thundering herd
+            jitter = random.uniform(0, backoff_time * 0.1)
+            total_backoff = backoff_time + jitter
             logger.warning(
                 "Campaign fetch failed, retrying",
                 extra={
                     "account_id": act,
                     "attempt": attempt + 1,
-                    "backoff": backoff_time,
+                    "backoff": total_backoff,
                 },
             )
-            sleep(backoff_time)
+            sleep(total_backoff)
 
     if not rows:
         logger.info("No campaigns found", extra={"account_id": act})
@@ -266,15 +293,18 @@ def sync_adset_dimensions(
                 )
                 raise
             backoff_time = retry_backoff * (2**attempt)
+            # Add jitter to prevent thundering herd
+            jitter = random.uniform(0, backoff_time * 0.1)
+            total_backoff = backoff_time + jitter
             logger.warning(
                 "Ad set fetch failed, retrying",
                 extra={
                     "account_id": act,
                     "attempt": attempt + 1,
-                    "backoff": backoff_time,
+                    "backoff": total_backoff,
                 },
             )
-            sleep(backoff_time)
+            sleep(total_backoff)
 
     if not rows:
         logger.info("No ad sets found", extra={"account_id": act})
@@ -360,15 +390,18 @@ def sync_ad_dimensions(
                 )
                 raise
             backoff_time = retry_backoff * (2**attempt)
+            # Add jitter to prevent thundering herd
+            jitter = random.uniform(0, backoff_time * 0.1)
+            total_backoff = backoff_time + jitter
             logger.warning(
                 "Ad fetch failed, retrying",
                 extra={
                     "account_id": act,
                     "attempt": attempt + 1,
-                    "backoff": backoff_time,
+                    "backoff": total_backoff,
                 },
             )
-            sleep(backoff_time)
+            sleep(total_backoff)
 
     if not rows:
         logger.info("No ads found", extra={"account_id": act})
@@ -452,15 +485,18 @@ def sync_creative_dimensions(
                 )
                 raise
             backoff_time = retry_backoff * (2**attempt)
+            # Add jitter to prevent thundering herd
+            jitter = random.uniform(0, backoff_time * 0.1)
+            total_backoff = backoff_time + jitter
             logger.warning(
                 "Creative fetch failed, retrying",
                 extra={
                     "account_id": act,
                     "attempt": attempt + 1,
-                    "backoff": backoff_time,
+                    "backoff": total_backoff,
                 },
             )
-            sleep(backoff_time)
+            sleep(total_backoff)
 
     if not rows:
         logger.info("No creatives found", extra={"account_id": act})
