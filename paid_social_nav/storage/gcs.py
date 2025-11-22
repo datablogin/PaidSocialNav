@@ -81,6 +81,7 @@ def upload_file_to_gcs(
     content_bytes: bytes | None = None,
     content_type: str = "application/pdf",
     make_public: bool = False,
+    signed_url_expiration_days: int = 7,
 ) -> str:
     """Upload a file to Google Cloud Storage.
 
@@ -90,6 +91,7 @@ def upload_file_to_gcs(
         content_bytes: Optional bytes to upload (used if local_path is None)
         content_type: MIME type of the file (default: application/pdf)
         make_public: Whether to make the uploaded file publicly accessible (default: False)
+        signed_url_expiration_days: Number of days the signed URL is valid (default: 7)
 
     Returns:
         Public URL or signed URL to the uploaded file
@@ -102,6 +104,7 @@ def upload_file_to_gcs(
         raise ValueError("Either local_path or content_bytes must be provided")
 
     try:
+        from google.api_core import exceptions as gcp_exceptions  # type: ignore
         from google.cloud import storage  # type: ignore
 
         # Parse GCS URI
@@ -137,9 +140,20 @@ def upload_file_to_gcs(
                 raise RuntimeError(
                     f"Bucket '{bucket_name}' does not exist. Create it first or check permissions."
                 )
+        except gcp_exceptions.NotFound:
+            raise RuntimeError(
+                f"Bucket '{bucket_name}' not found. "
+                "Verify the bucket name or create it first."
+            ) from None
+        except gcp_exceptions.Forbidden:
+            raise RuntimeError(
+                f"Access denied to bucket '{bucket_name}'. "
+                "Check your GCP permissions (storage.buckets.get required)."
+            ) from None
+        except RuntimeError:
+            # Re-raise our own RuntimeErrors
+            raise
         except Exception as e:
-            if "does not exist" in str(e):
-                raise
             logger.error(
                 f"Failed to access bucket {bucket_name}",
                 extra={"bucket": bucket_name, "error": str(e)},
@@ -178,15 +192,15 @@ def upload_file_to_gcs(
             url: str = blob.public_url
             logger.debug(f"File made public: {url}")
         else:
-            # Generate signed URL (valid for 7 days)
+            # Generate signed URL with configurable expiration
             from datetime import timedelta
 
             url = blob.generate_signed_url(
                 version="v4",
-                expiration=timedelta(days=7),
+                expiration=timedelta(days=signed_url_expiration_days),
                 method="GET",
             )
-            logger.debug("Generated signed URL (expires in 7 days)")
+            logger.debug(f"Generated signed URL (expires in {signed_url_expiration_days} days)")
 
         return url
 

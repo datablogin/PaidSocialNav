@@ -241,9 +241,9 @@ class AuditWorkflowSkill(BaseSkill):
                 write_pdf(str(pdf_path), pdf_bytes)
                 logger.info("PDF report generated", extra={"path": str(pdf_path)})
 
-                # Upload to GCS if requested
+                # Upload to GCS if requested - only upload after local write succeeds
                 gcs_upload_uri = context.get("gcs_upload_uri")
-                if gcs_upload_uri:
+                if gcs_upload_uri and pdf_path.exists():
                     try:
                         pdf_gcs_url = upload_file_to_gcs(
                             gcs_uri=gcs_upload_uri,

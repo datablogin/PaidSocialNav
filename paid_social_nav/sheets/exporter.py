@@ -44,6 +44,15 @@ class GoogleSheetsExporter:
         if not os.path.exists(credentials_path):
             raise ValueError(f"Credentials file not found: {credentials_path}")
 
+        # Check file permissions for security
+        perms = os.stat(credentials_path).st_mode & 0o777
+        if perms & 0o077:  # Check if group/others have any permissions
+            logger.warning(
+                f"Credentials file has overly permissive permissions: {oct(perms)}. "
+                f"Recommended: chmod 600 {credentials_path}",
+                extra={"credentials_path": credentials_path, "permissions": oct(perms)},
+            )
+
         try:
             self.credentials = service_account.Credentials.from_service_account_file(  # type: ignore[no-untyped-call]
                 credentials_path, scopes=self.SCOPES
@@ -86,8 +95,19 @@ class GoogleSheetsExporter:
             URL of the created Google Sheet
 
         Raises:
+            ValueError: If input parameters are invalid
             RuntimeError: If sheet creation or update fails
         """
+        # Validate inputs
+        if not tenant_name:
+            raise ValueError("tenant_name cannot be empty")
+
+        if not 0 <= overall_score <= 100:
+            raise ValueError(f"overall_score must be 0-100, got {overall_score}")
+
+        if not rules:
+            raise ValueError("rules list cannot be empty")
+
         try:
             # Create the spreadsheet
             sheet_title = f"{tenant_name} Audit {audit_date}"
@@ -201,9 +221,22 @@ class GoogleSheetsExporter:
             return str(spreadsheet_url)
 
         except HttpError as e:
+            # Handle quota exceeded errors specifically
+            if e.resp.status == 429:  # Quota exceeded
+                logger.error(
+                    "Google Sheets API quota exceeded. "
+                    "Retry after cooldown or request quota increase.",
+                    extra={"error": str(e)},
+                    exc_info=True,
+                )
+                raise RuntimeError(
+                    "Google Sheets API quota exceeded. "
+                    "See docs/google-sheets-setup.md for quota information."
+                ) from e
+
             logger.error(
                 "Google Sheets API error during export",
-                extra={"error": str(e)},
+                extra={"error": str(e), "status": e.resp.status},
                 exc_info=True,
             )
             raise RuntimeError(f"Failed to export to Google Sheets: {e}") from e

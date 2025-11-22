@@ -34,9 +34,55 @@ System Dependencies:
 
 from __future__ import annotations
 
+import threading
+from typing import Any
+
 from ..core.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+
+class TimeoutError(Exception):
+    """Exception raised when PDF generation exceeds timeout."""
+
+    pass
+
+
+def _run_with_timeout(func: Any, args: tuple[Any, ...], timeout_seconds: int) -> Any:
+    """Run a function with a timeout.
+
+    Args:
+        func: Function to run
+        args: Arguments to pass to function
+        timeout_seconds: Maximum time to allow in seconds
+
+    Returns:
+        Function result
+
+    Raises:
+        TimeoutError: If function exceeds timeout
+    """
+    result: list[Any] = []
+    exception: list[Exception] = []
+
+    def target() -> None:
+        try:
+            result.append(func(*args))
+        except Exception as e:
+            exception.append(e)
+
+    thread = threading.Thread(target=target)
+    thread.daemon = True
+    thread.start()
+    thread.join(timeout=timeout_seconds)
+
+    if thread.is_alive():
+        raise TimeoutError(f"PDF generation exceeded {timeout_seconds}s timeout")
+
+    if exception:
+        raise exception[0]
+
+    return result[0] if result else None
 
 
 class PDFExporter:
@@ -74,18 +120,22 @@ class PDFExporter:
             )
             return False
 
-    def html_to_pdf(self, html_content: str, base_url: str | None = None) -> bytes:
-        """Convert HTML content to PDF.
+    def html_to_pdf(
+        self, html_content: str, base_url: str | None = None, timeout_seconds: int = 60
+    ) -> bytes:
+        """Convert HTML content to PDF with timeout protection.
 
         Args:
             html_content: HTML string to convert to PDF
             base_url: Optional base URL for resolving relative paths in HTML
+            timeout_seconds: Maximum time to allow for PDF generation (default: 60s)
 
         Returns:
             PDF content as bytes
 
         Raises:
             RuntimeError: If WeasyPrint is not available or conversion fails
+            TimeoutError: If PDF generation exceeds timeout
         """
         if not self._weasyprint_available:
             raise RuntimeError(
@@ -98,9 +148,23 @@ class PDFExporter:
 
             logger.debug("Converting HTML to PDF", extra={"html_length": len(html_content)})
 
-            # Convert HTML to PDF
-            html = HTML(string=html_content, base_url=base_url)
-            pdf_bytes: bytes = html.write_pdf()
+            # Define the PDF generation function
+            def _generate_pdf() -> bytes:
+                html = HTML(string=html_content, base_url=base_url)
+                return html.write_pdf()
+
+            # Run with timeout protection
+            try:
+                pdf_bytes: bytes = _run_with_timeout(_generate_pdf, (), timeout_seconds)
+            except TimeoutError:
+                logger.error(
+                    f"PDF generation exceeded {timeout_seconds}s timeout",
+                    extra={"html_size": len(html_content), "timeout": timeout_seconds},
+                )
+                raise RuntimeError(
+                    f"PDF generation timed out after {timeout_seconds}s. "
+                    "Try reducing the report size or increasing the timeout."
+                )
 
             logger.info(
                 "PDF generated successfully",
@@ -109,6 +173,8 @@ class PDFExporter:
 
             return pdf_bytes
 
+        except (RuntimeError, TimeoutError):
+            raise
         except Exception as e:
             logger.error(
                 "Failed to convert HTML to PDF",
