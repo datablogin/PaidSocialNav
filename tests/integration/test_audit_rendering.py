@@ -393,7 +393,7 @@ def test_audit_result_matches_renderer_expectations(mock_bq_client, audit_config
         assert isinstance(rule["rule"], str)
         assert isinstance(rule["level"], str)
         assert isinstance(rule["window"], str)
-        assert isinstance(rule["score"], (int, float))
+        assert isinstance(rule["score"], int | float)
         assert isinstance(rule["findings"], dict)
 
     # Verify it renders without errors

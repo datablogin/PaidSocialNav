@@ -54,7 +54,7 @@ def ensure_dataset(project_id: str, dataset: str) -> None:
     ds_ref = bigquery.Dataset(f"{project_id}.{dataset}")
     ds_ref.location = "US"
     try:
-        client.get_dataset(ds_ref)
+        client.get_dataset(ds_ref.reference)
     except Exception:
         client.create_dataset(ds_ref, exists_ok=True)
 
@@ -88,10 +88,114 @@ def ensure_dim_ad_table(project_id: str, dataset: str) -> None:
 
     schema = [
         bigquery.SchemaField("ad_global_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("media_type", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("platform_ad_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("adset_global_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("campaign_global_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("account_global_id", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("ad_name", "STRING", mode="NULLABLE"),
-        bigquery.SchemaField("creative_id", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("ad_status", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("creative_global_id", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("created_time", "TIMESTAMP", mode="NULLABLE"),
         bigquery.SchemaField("updated_at", "TIMESTAMP", mode="NULLABLE"),
+        bigquery.SchemaField("raw_data", "JSON", mode="NULLABLE"),
+    ]
+
+    table = bigquery.Table(table_id, schema=schema)
+    client.create_table(table, exists_ok=True)
+
+
+def ensure_dim_account_table(project_id: str, dataset: str) -> None:
+    """Ensure dim_account dimension table exists with proper schema."""
+    client = bigquery.Client(project=project_id)
+    table_id = f"{project_id}.{dataset}.dim_account"
+
+    schema = [
+        bigquery.SchemaField("account_global_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("platform_account_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("account_name", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("currency", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("timezone", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("account_status", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("updated_at", "TIMESTAMP", mode="NULLABLE"),
+        bigquery.SchemaField("raw_data", "JSON", mode="NULLABLE"),
+    ]
+
+    table = bigquery.Table(table_id, schema=schema)
+    client.create_table(table, exists_ok=True)
+
+
+def ensure_dim_campaign_table(project_id: str, dataset: str) -> None:
+    """Ensure dim_campaign dimension table exists with proper schema."""
+    client = bigquery.Client(project=project_id)
+    table_id = f"{project_id}.{dataset}.dim_campaign"
+
+    schema = [
+        bigquery.SchemaField("campaign_global_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("platform_campaign_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("account_global_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("campaign_name", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("campaign_status", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("objective", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("buying_type", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("daily_budget", "FLOAT64", mode="NULLABLE"),
+        bigquery.SchemaField("lifetime_budget", "FLOAT64", mode="NULLABLE"),
+        bigquery.SchemaField("created_time", "TIMESTAMP", mode="NULLABLE"),
+        bigquery.SchemaField("updated_at", "TIMESTAMP", mode="NULLABLE"),
+        bigquery.SchemaField("raw_data", "JSON", mode="NULLABLE"),
+    ]
+
+    table = bigquery.Table(table_id, schema=schema)
+    client.create_table(table, exists_ok=True)
+
+
+def ensure_dim_adset_table(project_id: str, dataset: str) -> None:
+    """Ensure dim_adset dimension table exists with proper schema."""
+    client = bigquery.Client(project=project_id)
+    table_id = f"{project_id}.{dataset}.dim_adset"
+
+    schema = [
+        bigquery.SchemaField("adset_global_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("platform_adset_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("campaign_global_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("account_global_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("adset_name", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("adset_status", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("optimization_goal", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("billing_event", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("bid_strategy", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("daily_budget", "FLOAT64", mode="NULLABLE"),
+        bigquery.SchemaField("lifetime_budget", "FLOAT64", mode="NULLABLE"),
+        bigquery.SchemaField("start_time", "TIMESTAMP", mode="NULLABLE"),
+        bigquery.SchemaField("end_time", "TIMESTAMP", mode="NULLABLE"),
+        bigquery.SchemaField("created_time", "TIMESTAMP", mode="NULLABLE"),
+        bigquery.SchemaField("updated_at", "TIMESTAMP", mode="NULLABLE"),
+        bigquery.SchemaField("raw_data", "JSON", mode="NULLABLE"),
+    ]
+
+    table = bigquery.Table(table_id, schema=schema)
+    client.create_table(table, exists_ok=True)
+
+
+def ensure_dim_creative_table(project_id: str, dataset: str) -> None:
+    """Ensure dim_creative dimension table exists with proper schema."""
+    client = bigquery.Client(project=project_id)
+    table_id = f"{project_id}.{dataset}.dim_creative"
+
+    schema = [
+        bigquery.SchemaField("creative_global_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("platform_creative_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("account_global_id", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("creative_name", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("creative_status", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("title", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("body", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("call_to_action", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("image_url", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("video_url", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("thumbnail_url", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("created_time", "TIMESTAMP", mode="NULLABLE"),
+        bigquery.SchemaField("updated_at", "TIMESTAMP", mode="NULLABLE"),
+        bigquery.SchemaField("raw_data", "JSON", mode="NULLABLE"),
     ]
 
     table = bigquery.Table(table_id, schema=schema)
@@ -313,6 +417,8 @@ def load_benchmarks_csv(
 
             # Validate percentile ordering (if all present)
             if all(v is not None for v in [p25, p50, p75, p90]):
+                # Type narrowing: mypy now knows these are all floats
+                assert p25 is not None and p50 is not None and p75 is not None and p90 is not None
                 if not (p25 <= p50 <= p75 <= p90):
                     raise ValueError(
                         f"Invalid percentile ordering in row {row_num}: "
@@ -389,3 +495,86 @@ def load_benchmarks_csv(
     finally:
         # Clean up temporary table
         client.delete_table(temp_table, not_found_ok=True)
+
+
+def upsert_dimension(
+    *,
+    project_id: str,
+    dataset: str,
+    table_name: str,
+    rows: list[dict[str, Any]],
+    merge_key: str,
+) -> int:
+    """Upsert dimension records using MERGE statement.
+
+    Args:
+        project_id: GCP project ID
+        dataset: BigQuery dataset name
+        table_name: Dimension table name (e.g., 'dim_account', 'dim_campaign')
+        rows: List of dimension records to upsert
+        merge_key: Primary key field for matching (e.g., 'account_global_id')
+
+    Returns:
+        Number of rows processed
+
+    Raises:
+        RuntimeError: If upsert fails
+    """
+    if not rows:
+        return 0
+
+    import json
+    import uuid
+    from io import BytesIO
+
+    client = bigquery.Client(project=project_id)
+    dest_table = f"{project_id}.{dataset}.{table_name}"
+
+    # Create unique staging table
+    unique_id = uuid.uuid4().hex[:8]
+    stg_table = f"{project_id}.{dataset}.__stg_{table_name}_{unique_id}"
+
+    try:
+        # Get schema from destination table
+        dest_table_obj = client.get_table(dest_table)
+        schema = dest_table_obj.schema
+
+        # Create staging table with same schema
+        stg_table_obj = bigquery.Table(stg_table, schema=schema)
+        client.create_table(stg_table_obj)
+
+        # Load data to staging table
+        job_config = bigquery.LoadJobConfig()
+        job_config.source_format = bigquery.SourceFormat.NEWLINE_DELIMITED_JSON
+
+        buf = BytesIO()
+        for r in rows:
+            buf.write((json.dumps(r) + "\n").encode("utf-8"))
+        buf.seek(0)
+
+        load_job = client.load_table_from_file(buf, stg_table, job_config=job_config)
+        load_job.result()
+
+        # Build MERGE statement
+        # Get all field names except the merge key
+        field_names = [field.name for field in schema]
+        update_fields = [f for f in field_names if f != merge_key]
+
+        # Build UPDATE SET clause
+        update_set = ",\n          ".join([f"{f} = S.{f}" for f in update_fields])
+
+        merge_sql = f"""
+        MERGE `{dest_table}` T
+        USING `{stg_table}` S
+        ON T.{merge_key} = S.{merge_key}
+        WHEN MATCHED THEN UPDATE SET
+          {update_set}
+        WHEN NOT MATCHED THEN INSERT ROW
+        """
+
+        client.query(merge_sql).result()
+        return len(rows)
+
+    finally:
+        # Clean up staging table
+        client.delete_table(stg_table, not_found_ok=True)

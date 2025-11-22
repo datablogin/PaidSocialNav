@@ -174,7 +174,21 @@ class AuditWorkflowSkill(BaseSkill):
                 message=f"Failed to create output directory: {e}"
             )
 
-        renderer = ReportRenderer()
+        # Set up assets directory if provided
+        assets_dir = context.get("assets_dir")
+        assets_path = None
+        if assets_dir:
+            assets_path = Path(assets_dir)
+            try:
+                assets_path.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                logger.warning(
+                    "Failed to create assets directory, continuing without it",
+                    extra={"assets_dir": str(assets_path), "error": str(e)}
+                )
+                assets_path = None
+
+        renderer = ReportRenderer(assets_dir=assets_path)
 
         # Generate Markdown
         md_path = output_dir / f"{tenant.id}_audit_{datetime.now().strftime('%Y%m%d')}.md"
