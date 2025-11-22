@@ -194,7 +194,7 @@ def sync_campaign_dimensions(
                     extra={"account_id": act, "attempts": attempt + 1, "error": str(e)},
                 )
                 raise
-            backoff_time = retry_backoff * (2**attempt)
+            backoff_time = min(retry_backoff * (2**attempt), 60.0)  # Cap at 60s
             # Add jitter to prevent thundering herd
             jitter = random.uniform(0, backoff_time * 0.1)
             total_backoff = backoff_time + jitter
@@ -292,7 +292,7 @@ def sync_adset_dimensions(
                     extra={"account_id": act, "attempts": attempt + 1, "error": str(e)},
                 )
                 raise
-            backoff_time = retry_backoff * (2**attempt)
+            backoff_time = min(retry_backoff * (2**attempt), 60.0)  # Cap at 60s
             # Add jitter to prevent thundering herd
             jitter = random.uniform(0, backoff_time * 0.1)
             total_backoff = backoff_time + jitter
@@ -389,7 +389,7 @@ def sync_ad_dimensions(
                     extra={"account_id": act, "attempts": attempt + 1, "error": str(e)},
                 )
                 raise
-            backoff_time = retry_backoff * (2**attempt)
+            backoff_time = min(retry_backoff * (2**attempt), 60.0)  # Cap at 60s
             # Add jitter to prevent thundering herd
             jitter = random.uniform(0, backoff_time * 0.1)
             total_backoff = backoff_time + jitter
@@ -484,7 +484,7 @@ def sync_creative_dimensions(
                     extra={"account_id": act, "attempts": attempt + 1, "error": str(e)},
                 )
                 raise
-            backoff_time = retry_backoff * (2**attempt)
+            backoff_time = min(retry_backoff * (2**attempt), 60.0)  # Cap at 60s
             # Add jitter to prevent thundering herd
             jitter = random.uniform(0, backoff_time * 0.1)
             total_backoff = backoff_time + jitter

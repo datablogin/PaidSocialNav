@@ -29,11 +29,11 @@ class MetaAdapter(BaseAdapter):
         super().__init__(access_token)
         self.timeout = timeout
 
-    def _sanitize_error(self, error_data: dict[str, Any] | str) -> dict[str, Any] | str:
+    def _sanitize_error(self, error_data: dict[str, Any] | str | list) -> dict[str, Any] | str | list:
         """Recursively remove sensitive data from error responses to prevent token leakage.
 
         Args:
-            error_data: Error response from API (dict or string)
+            error_data: Error response from API (dict, list, or string)
 
         Returns:
             Sanitized error data with tokens redacted
@@ -49,6 +49,9 @@ class MetaAdapter(BaseAdapter):
                 # Recursively sanitize nested dicts
                 elif isinstance(value, dict):
                     sanitized[key] = self._sanitize_error(value)
+                # Recursively sanitize lists
+                elif isinstance(value, list):
+                    sanitized[key] = self._sanitize_error(value)
                 # Check if string values contain sensitive patterns
                 elif isinstance(value, str):
                     # Check for common token patterns in the value
@@ -62,6 +65,9 @@ class MetaAdapter(BaseAdapter):
                 else:
                     sanitized[key] = value
             return sanitized
+        elif isinstance(error_data, list):
+            # Recursively sanitize each item in the list
+            return [self._sanitize_error(item) for item in error_data]
         # For string errors, limit length to prevent accidental token exposure
         return str(error_data)[:500] if error_data else ""
 

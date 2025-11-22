@@ -174,10 +174,20 @@ class ReportRenderer:
 
         # Log summary of chart generation
         if chart_failures:
-            logger.warning(
-                f"Generated {len(charts)}/4 charts. Failures: {', '.join(f[0] for f in chart_failures)}",
-                extra={"tenant": tenant_name, "failures": chart_failures},
-            )
+            failure_count = len(chart_failures)
+            failure_names = ', '.join(f[0] for f in chart_failures)
+
+            if failure_count >= 3:
+                # Critical: Most charts failed
+                logger.error(
+                    f"Critical: {failure_count}/4 charts failed to generate. Failures: {failure_names}",
+                    extra={"tenant": tenant_name, "failures": chart_failures},
+                )
+            else:
+                logger.warning(
+                    f"Generated {len(charts)}/4 charts. Failures: {failure_names}",
+                    extra={"tenant": tenant_name, "failures": chart_failures},
+                )
         else:
             logger.info(
                 f"Successfully generated all {len(charts)} charts for report",
@@ -219,15 +229,22 @@ class ReportRenderer:
             window = rule.get("window", "")
 
             if rule_name == "pacing_vs_target":
-                evidence["pacing_data"].append(
-                    {
-                        "window": window,
-                        "actual": findings.get("actual", 0.0),
-                        "target": findings.get("target", 0.0),
-                        "ratio": findings.get("ratio"),
-                        "within_band": findings.get("within_band", False),
-                    }
-                )
+                # Validate required fields are present
+                if "actual" in findings and "target" in findings:
+                    evidence["pacing_data"].append(
+                        {
+                            "window": window,
+                            "actual": findings.get("actual", 0.0),
+                            "target": findings.get("target", 0.0),
+                            "ratio": findings.get("ratio"),
+                            "within_band": findings.get("within_band", False),
+                        }
+                    )
+                else:
+                    logger.warning(
+                        f"Incomplete pacing findings for window {window}",
+                        extra={"findings": findings},
+                    )
             elif rule_name == "creative_diversity":
                 evidence["creative_data"].append(
                     {
