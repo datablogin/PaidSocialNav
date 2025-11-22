@@ -21,6 +21,40 @@
 
 ---
 
+## Visual Summary
+
+{% if charts %}
+{% if charts.score_distribution %}
+### Score Distribution
+{% if charts.score_distribution.path %}
+![Score Distribution]({{ charts.score_distribution.path }})
+{% endif %}
+{% endif %}
+
+{% if charts.pacing %}
+### Budget Pacing vs Target
+{% if charts.pacing.path %}
+![Budget Pacing]({{ charts.pacing.path }})
+{% endif %}
+{% endif %}
+
+{% if charts.creative_mix %}
+### Creative Mix Distribution
+{% if charts.creative_mix.path %}
+![Creative Mix]({{ charts.creative_mix.path }})
+{% endif %}
+{% endif %}
+
+{% if charts.performance_trends %}
+### Performance Trends
+{% if charts.performance_trends.path %}
+![Performance Trends]({{ charts.performance_trends.path }})
+{% endif %}
+{% endif %}
+{% endif %}
+
+---
+
 ## Rule-by-Rule Analysis
 
 {% for rule in rules %}
@@ -106,6 +140,64 @@ These actions can be implemented immediately for fast results:
 {% for action in roadmap.phase_3_90_days %}
 - {{ action }}
 {% endfor %}
+{% endif %}
+
+---
+
+## Evidence Appendix
+
+This section provides detailed data supporting the audit findings.
+
+{% if evidence %}
+{% if evidence.pacing_data %}
+### Budget Pacing Evidence
+
+| Window | Actual Spend | Target Spend | Ratio | Within Target |
+|--------|--------------|--------------|-------|---------------|
+{% for item in evidence.pacing_data %}
+| {{ item.window }} | ${{ "%.2f"|format(item.actual) }} | ${{ "%.2f"|format(item.target) }} | {{ "%.2f"|format(item.ratio) if item.ratio else "N/A" }} | {{ "Yes" if item.within_band else "No" }} |
+{% endfor %}
+{% endif %}
+
+{% if evidence.creative_data %}
+### Creative Mix Evidence
+
+| Window | Video Share | Image Share | Shortfall |
+|--------|-------------|-------------|-----------|
+{% for item in evidence.creative_data %}
+| {{ item.window }} | {{ "%.1f"|format(item.video_share * 100) }}% | {{ "%.1f"|format(item.image_share * 100) }}% | {{ "%.3f"|format(item.shortfall) }} |
+{% endfor %}
+{% endif %}
+
+{% if evidence.performance_data %}
+### Performance Metrics Evidence
+
+| Window | Metric | Value | Threshold |
+|--------|--------|-------|-----------|
+{% for item in evidence.performance_data %}
+| {{ item.window }} | {{ item.metric }} | {{ "%.4f"|format(item.value) }} | {{ "%.4f"|format(item.threshold) }} |
+{% endfor %}
+{% endif %}
+
+{% if evidence.benchmark_data %}
+### Benchmark Comparison Evidence
+
+| Window | Metric | Actual | Benchmark (P50) | Tier |
+|--------|--------|--------|-----------------|------|
+{% for item in evidence.benchmark_data %}
+| {{ item.window }} | {{ item.metric }} | {{ "%.4f"|format(item.actual) }} | {{ "%.4f"|format(item.benchmark_p50) }} | {{ item.tier }} |
+{% endfor %}
+{% endif %}
+
+{% if evidence.tracking_data %}
+### Tracking Health Evidence
+
+| Window | Conversions Present | Conv Rate | Clicks |
+|--------|---------------------|-----------|--------|
+{% for item in evidence.tracking_data %}
+| {{ item.window }} | {{ "Yes" if item.conversions_present else "No" }} | {{ "%.4f"|format(item.conv_rate) if item.conv_rate else "N/A" }} | {{ item.clicks }} |
+{% endfor %}
+{% endif %}
 {% endif %}
 
 ---

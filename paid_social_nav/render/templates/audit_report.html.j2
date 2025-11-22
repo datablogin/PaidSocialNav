@@ -65,6 +65,40 @@
         </div>
     </div>
 
+    {% if charts %}
+    <div class="card">
+        <h2>Visual Summary</h2>
+
+        {% if charts.score_distribution and charts.score_distribution.base64 %}
+        <div style="margin-bottom: 30px;">
+            <h3>Score Distribution</h3>
+            <img src="data:image/png;base64,{{ charts.score_distribution.base64 }}" alt="Score Distribution" style="max-width: 100%; height: auto;">
+        </div>
+        {% endif %}
+
+        {% if charts.pacing and charts.pacing.base64 %}
+        <div style="margin-bottom: 30px;">
+            <h3>Budget Pacing vs Target</h3>
+            <img src="data:image/png;base64,{{ charts.pacing.base64 }}" alt="Budget Pacing" style="max-width: 100%; height: auto;">
+        </div>
+        {% endif %}
+
+        {% if charts.creative_mix and charts.creative_mix.base64 %}
+        <div style="margin-bottom: 30px;">
+            <h3>Creative Mix Distribution</h3>
+            <img src="data:image/png;base64,{{ charts.creative_mix.base64 }}" alt="Creative Mix" style="max-width: 100%; height: auto;">
+        </div>
+        {% endif %}
+
+        {% if charts.performance_trends and charts.performance_trends.base64 %}
+        <div style="margin-bottom: 30px;">
+            <h3>Performance Trends</h3>
+            <img src="data:image/png;base64,{{ charts.performance_trends.base64 }}" alt="Performance Trends" style="max-width: 100%; height: auto;">
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <div class="card">
         <h2>Rule-by-Rule Analysis</h2>
         <div class="rule-grid">
@@ -153,6 +187,137 @@
             <li>{{ action }}</li>
         {% endfor %}
         </ul>
+    </div>
+    {% endif %}
+
+    {% if evidence %}
+    <div class="card">
+        <h2>Evidence Appendix</h2>
+        <p>This section provides detailed data supporting the audit findings.</p>
+
+        {% if evidence.pacing_data %}
+        <h3>Budget Pacing Evidence</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+                <tr style="background: #f5f5f5;">
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Window</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Actual Spend</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Target Spend</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Ratio</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">Within Target</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in evidence.pacing_data %}
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #ddd;">{{ item.window }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${{ "%.2f"|format(item.actual) }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${{ "%.2f"|format(item.target) }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">{{ "%.2f"|format(item.ratio) if item.ratio else "N/A" }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{{ "Yes" if item.within_band else "No" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if evidence.creative_data %}
+        <h3>Creative Mix Evidence</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+                <tr style="background: #f5f5f5;">
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Window</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Video Share</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Image Share</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Shortfall</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in evidence.creative_data %}
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #ddd;">{{ item.window }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">{{ "%.1f"|format(item.video_share * 100) }}%</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">{{ "%.1f"|format(item.image_share * 100) }}%</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">{{ "%.3f"|format(item.shortfall) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if evidence.performance_data %}
+        <h3>Performance Metrics Evidence</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+                <tr style="background: #f5f5f5;">
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Window</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Metric</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Value</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Threshold</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in evidence.performance_data %}
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #ddd;">{{ item.window }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd;">{{ item.metric }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">{{ "%.4f"|format(item.value) }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">{{ "%.4f"|format(item.threshold) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if evidence.benchmark_data %}
+        <h3>Benchmark Comparison Evidence</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+                <tr style="background: #f5f5f5;">
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Window</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Metric</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Actual</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Benchmark (P50)</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">Tier</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in evidence.benchmark_data %}
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #ddd;">{{ item.window }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd;">{{ item.metric }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">{{ "%.4f"|format(item.actual) }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">{{ "%.4f"|format(item.benchmark_p50) }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{{ item.tier }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if evidence.tracking_data %}
+        <h3>Tracking Health Evidence</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+                <tr style="background: #f5f5f5;">
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Window</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">Conversions Present</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Conv Rate</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Clicks</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in evidence.tracking_data %}
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #ddd;">{{ item.window }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{{ "Yes" if item.conversions_present else "No" }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">{{ "%.4f"|format(item.conv_rate) if item.conv_rate else "N/A" }}</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">{{ item.clicks }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
     </div>
     {% endif %}
 
