@@ -1,3 +1,66 @@
+"""Strategic insights generation from audit results using Claude AI.
+
+This module provides intelligent analysis of paid social advertising audits by leveraging
+Claude AI to generate strategic insights, recommendations, and actionable improvement plans.
+It transforms numerical audit metrics into human-readable strategic guidance suitable for
+executive stakeholders and advertising professionals.
+
+The InsightsGenerator bridges the gap between technical audit data and strategic business
+decisions by asking Claude to analyze audit results and provide comprehensive strategic
+recommendations including strengths identification, critical issue analysis, actionable
+recommendations, quick wins, and a 90-day implementation roadmap.
+
+Insight Generation Workflow:
+1. Initialize InsightsGenerator with Anthropic API key and optional configuration
+2. Prepare audit results containing rule scores, findings, and overall metrics
+3. Build comprehensive prompt that sanitizes inputs against prompt injection
+4. Send prompt to Claude API for analysis and strategic thinking
+5. Parse Claude's structured JSON response containing insights
+6. Handle API errors gracefully with appropriate logging and fallback structures
+
+Usage:
+    from paid_social_nav.insights.generator import InsightsGenerator
+    from paid_social_nav.audit.engine import run_audit
+
+    audit_result = run_audit(account_id="123", adapter=adapter)
+    generator = InsightsGenerator(api_key="sk-...")
+    insights = generator.generate_strategy(
+        audit_result=audit_result,
+        tenant_name="acme_corp"
+    )
+
+    for strength in insights.get("strengths", []):
+        print(f"Strength: {strength['title']}")
+    for rec in insights.get("recommendations", []):
+        print(f"Recommendation: {rec['title']}")
+
+Architecture Notes:
+    - Uses Claude 3.5 Haiku model for cost-effective analysis
+    - Implements prompt injection prevention via tenant name sanitization
+    - Structures prompts with explicit JSON format expectations
+    - Graceful fallback when Claude API fails (returns empty structures)
+    - Supports configurable token limits and temperature
+
+Security Notes:
+    - Sanitizes user input (tenant_name) to remove newlines/control characters
+    - Limits tenant name to 100 characters before prompt inclusion
+    - API key never logged (handled by Anthropic SDK)
+    - Fails safely with empty structures if API call errors occur
+    - Response parsing handles multiple markdown code block formats
+
+Performance Notes:
+    - Default token limit (4000) handles most audit result analyses
+    - Temperature 0.7 balances creativity and consistency
+    - Claude API calls block until completion
+    - JSON parsing includes defensive markdown removal
+
+API Integration Notes:
+    - Requires valid Anthropic API key with Claude access
+    - Uses claude-3-5-haiku-20241022 model (cost-optimized)
+    - Raises AuthenticationError on invalid credentials
+    - Raises RateLimitError when API quota exceeded
+"""
+
 from __future__ import annotations
 
 import json
