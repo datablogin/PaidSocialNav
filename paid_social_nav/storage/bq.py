@@ -249,7 +249,6 @@ def load_benchmarks_csv(
     """
     import csv
     import json
-    import os
     import re
     import uuid
     from io import BytesIO
@@ -279,8 +278,6 @@ def load_benchmarks_csv(
     # Validate CSV and prepare rows BEFORE creating any tables
     rows = []
     required_cols = {"industry", "region", "spend_band", "metric_name", "p25", "p50", "p75", "p90"}
-    valid_industries = {"retail", "healthcare", "finance", "technology", "ecommerce"}  # Extensible
-    valid_regions = {"US", "EU", "APAC", "GLOBAL"}  # Extensible
 
     with resolved_path.open("r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
