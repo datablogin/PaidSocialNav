@@ -2,11 +2,30 @@
 
 This module provides helper functions for standardized console output across
 all CLI commands with consistent emoji, color schemes, and formatting patterns.
+
+Logging Strategy:
+- Use console output functions (success, error, info, warning) for user-facing messages
+- Use structured logging (logger.info, logger.error, etc.) for debugging and observability
+- Console output is for immediate feedback; logging is for analysis and troubleshooting
 """
 
 from __future__ import annotations
 
+from enum import Enum
+
 import typer
+
+
+class OutputColor(str, Enum):
+    """Valid color options for plain text output."""
+
+    WHITE = "WHITE"
+    CYAN = "CYAN"
+    GREEN = "GREEN"
+    YELLOW = "YELLOW"
+    RED = "RED"
+    MAGENTA = "MAGENTA"
+    BLUE = "BLUE"
 
 
 def success(message: str, *, prefix: bool = True) -> None:
@@ -70,18 +89,34 @@ def warning(message: str, *, prefix: bool = True) -> None:
     typer.secho(formatted, fg=typer.colors.YELLOW)
 
 
-def plain(message: str, *, color: str | None = None) -> None:
+def plain(message: str, *, color: OutputColor | None = None) -> None:
     """Display a plain message without emoji prefix.
 
     Args:
         message: The message to display
-        color: Optional color name (e.g., 'WHITE', 'CYAN', 'GREEN')
+        color: Optional color from OutputColor enum
 
     Example:
-        plain("Additional details here", color='WHITE')
-        # Output: Additional details here
+        from paid_social_nav.cli.output import OutputColor
+        plain("Additional details here", color=OutputColor.WHITE)
+        # Output: Additional details here (in white)
     """
     if color:
-        typer.secho(message, fg=getattr(typer.colors, color))
+        typer.secho(message, fg=getattr(typer.colors, color.value))
     else:
         typer.echo(message)
+
+
+def data(message: str, *, prefix: bool = True) -> None:
+    """Display a data/sheets message in cyan with chart emoji.
+
+    Args:
+        message: The data message to display
+        prefix: Whether to include the chart emoji prefix (default: True)
+
+    Example:
+        data("Google Sheets:")
+        # Output: 📊 Google Sheets:
+    """
+    formatted = f"📊 {message}" if prefix else message
+    typer.secho(formatted, fg=typer.colors.CYAN)

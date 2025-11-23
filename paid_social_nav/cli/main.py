@@ -144,6 +144,10 @@ def meta_sync_insights(
                 project_id=project_id, secret_id=secret_name, version=secret_version
             )
         except Exception as e:
+            logger.exception("Secret access failed", extra={
+                "secret_name": secret_name,
+                "project_id": project_id,
+            })
             cli_output.error(f"Failed to read secret '{secret_name}' from project '{project_id}': {e}")
             raise typer.Exit(code=1) from e
 
@@ -215,6 +219,11 @@ def meta_sync_insights(
             page_size=page_size,
         )
     except Exception as e:
+        logger.exception("Meta insights sync failed", extra={
+            "account_id": account_id,
+            "project_id": project_id,
+            "dataset": dataset,
+        })
         cli_output.error(f"Sync failed: {e}")
         raise typer.Exit(code=1) from e
 
@@ -290,6 +299,10 @@ def meta_sync_dimensions(
                 project_id=project_id, secret_id=secret_name, version=secret_version
             )
         except Exception as e:
+            logger.exception("Secret access failed", extra={
+                "secret_name": secret_name,
+                "project_id": project_id,
+            })
             cli_output.error(f"Failed to read secret '{secret_name}' from project '{project_id}': {e}")
             raise typer.Exit(code=1) from e
 
@@ -308,6 +321,11 @@ def meta_sync_dimensions(
             retry_backoff=retry_backoff_seconds,
         )
     except Exception as e:
+        logger.exception("Dimension sync failed", extra={
+            "account_id": account_id,
+            "project_id": project_id,
+            "dataset": dataset,
+        })
         cli_output.error(f"Dimension sync failed: {e}")
         raise typer.Exit(code=1) from e
 
@@ -407,6 +425,9 @@ def audit_run(
         raise typer.Exit(code=1) from None
     except Exception as e:
         # Unexpected errors
+        logger.exception("Unexpected error during audit", extra={
+            "config": config,
+        })
         cli_output.error(f"Unexpected error during audit: {e}")
         raise typer.Exit(code=1) from None
 
@@ -580,7 +601,8 @@ def run_audit_skill(
             cli_output.plain(f"  PDF (GCS): {result.data['pdf_gcs_url']}")
 
         if result.data.get("sheet_url"):
-            cli_output.plain("\n📊 Google Sheets:")
+            typer.echo("")  # Blank line
+            cli_output.data("Google Sheets:")
             cli_output.plain(f"  {result.data['sheet_url']}")
     else:
         cli_output.error(result.message)
