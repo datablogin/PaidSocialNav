@@ -12,6 +12,8 @@ from ..core.logging_config import get_logger
 from ..core.tenants import get_tenant
 from ..insights.generator import InsightsGenerator
 from ..render.renderer import ReportRenderer, write_text
+from ..render.pdf import write_pdf
+from ..storage.gcs import upload_file_to_gcs
 from .base import BaseSkill, SkillResult
 
 logger = get_logger(__name__)
@@ -228,23 +230,128 @@ class AuditWorkflowSkill(BaseSkill):
                 message=f"Failed to generate HTML report: {e}"
             )
 
-        # Step 6: Return results
+        # Generate PDF if requested
+        pdf_path = None
+        pdf_gcs_url = None
+        formats = context.get("formats", ["md", "html"])
+        if "pdf" in formats:
+            pdf_path = output_dir / f"{tenant.id}_audit_{datetime.now().strftime('%Y%m%d')}.pdf"
+            try:
+                pdf_bytes = renderer.render_pdf(data)
+                write_pdf(str(pdf_path), pdf_bytes)
+                logger.info("PDF report generated", extra={"path": str(pdf_path)})
+
+                # Upload to GCS if requested - only upload after local write succeeds
+                gcs_upload_uri = context.get("gcs_upload_uri")
+                if gcs_upload_uri and pdf_path.exists():
+                    try:
+                        pdf_gcs_url = upload_file_to_gcs(
+                            gcs_uri=gcs_upload_uri,
+                            content_bytes=pdf_bytes,
+                            content_type="application/pdf",
+                            make_public=context.get("gcs_make_public", False),
+                        )
+                        logger.info(
+                            "PDF uploaded to GCS",
+                            extra={"gcs_url": pdf_gcs_url}
+                        )
+                    except (ValueError, RuntimeError) as e:
+                        logger.error(
+                            "Failed to upload PDF to GCS",
+                            extra={"gcs_uri": gcs_upload_uri, "error": str(e)},
+                            exc_info=True
+                        )
+                        # Continue even if upload fails
+
+            except (OSError, RuntimeError) as e:
+                # OSError: File I/O errors, RuntimeError: PDF rendering errors
+                logger.error(
+                    "Failed to generate PDF report",
+                    extra={"path": str(pdf_path), "error": str(e)},
+                    exc_info=True
+                )
+                # Continue without PDF if generation fails
+                pdf_path = None
+
+        # Step 6: Export to Google Sheets if requested
+        sheet_url = None
+        if context.get("sheets_output", False):
+            try:
+                from ..sheets.exporter import GoogleSheetsExporter
+
+                logger.info("Exporting audit data to Google Sheets")
+                exporter = GoogleSheetsExporter()
+                sheet_url = exporter.export_audit_data(
+                    tenant_name=tenant.id,
+                    audit_date=datetime.now().strftime("%Y-%m-%d"),
+                    overall_score=audit_result.overall_score,
+                    rules=audit_result.rules,
+                    period=period,
+                    insights=insights,
+                )
+                logger.info(
+                    "Google Sheets export successful",
+                    extra={"sheet_url": sheet_url}
+                )
+            except ValueError as e:
+                # Credentials not configured - log warning but continue
+                logger.warning(
+                    "Google Sheets export skipped: credentials not configured",
+                    extra={"error": str(e)}
+                )
+            except Exception as e:
+                # Other errors - log error but continue
+                logger.error(
+                    "Google Sheets export failed",
+                    extra={"error": str(e)},
+                    exc_info=True
+                )
+
+        # Step 7: Re-render HTML with sheet URL if available
+        if sheet_url:
+            try:
+                data["sheet_url"] = sheet_url
+                html_content = renderer.render_html(data)
+                write_text(str(html_path), html_content)
+                logger.info(
+                    "HTML report updated with Google Sheets link",
+                    extra={"path": str(html_path)}
+                )
+            except Exception as e:
+                logger.warning(
+                    "Failed to update HTML with sheet URL, continuing with original HTML",
+                    extra={"error": str(e)}
+                )
+
+        # Step 8: Return results
         logger.info(
             "Audit workflow completed successfully",
             extra={
                 "tenant_id": tenant.id,
                 "score": audit_result.overall_score,
                 "markdown_report": str(md_path),
-                "html_report": str(html_path)
+                "html_report": str(html_path),
+                "pdf_report": str(pdf_path) if pdf_path else None,
+                "pdf_gcs_url": pdf_gcs_url,
+                "sheet_url": sheet_url
             }
         )
+
+        result_data = {
+            "audit_score": audit_result.overall_score,
+            "markdown_report": str(md_path),
+            "html_report": str(html_path),
+            "tenant_id": tenant.id,
+        }
+        if pdf_path:
+            result_data["pdf_report"] = str(pdf_path)
+        if pdf_gcs_url:
+            result_data["pdf_gcs_url"] = pdf_gcs_url
+        if sheet_url:
+            result_data["sheet_url"] = sheet_url
+
         return SkillResult(
             success=True,
-            data={
-                "audit_score": audit_result.overall_score,
-                "markdown_report": str(md_path),
-                "html_report": str(html_path),
-                "tenant_id": tenant.id,
-            },
+            data=result_data,
             message=f"Audit complete: {audit_result.overall_score}/100"
         )

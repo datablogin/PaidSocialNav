@@ -8,6 +8,7 @@ from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 from .. import __version__
 from ..core.logging_config import get_logger
 from ..visuals.charts import ChartGenerator
+from .pdf import PDFExporter
 
 logger = get_logger(__name__)
 
@@ -29,6 +30,7 @@ class ReportRenderer:
         )
         self.assets_dir = assets_dir
         self.chart_generator = ChartGenerator(output_dir=assets_dir) if assets_dir else None
+        self.pdf_exporter = PDFExporter()
 
     def render_markdown(
         self, data: dict[str, Any], generate_charts: bool = True
@@ -111,6 +113,50 @@ class ReportRenderer:
         except Exception as e:
             logger.error("Failed to render HTML report", extra={"error": str(e)})
             raise RuntimeError(f"Failed to render HTML report: {e}") from e
+
+    def render_pdf(self, data: dict[str, Any], generate_charts: bool = True) -> bytes:
+        """Render PDF report from audit data.
+
+        Args:
+            data: Dictionary containing report data with required keys:
+                  tenant_name, period, audit_date, overall_score, rules, recommendations
+            generate_charts: Whether to generate and embed charts (default: True)
+
+        Returns:
+            PDF content as bytes
+
+        Raises:
+            RuntimeError: If PDF generation fails or WeasyPrint is not available
+        """
+        if not self.pdf_exporter.is_available():
+            raise RuntimeError(
+                "PDF export is not available. WeasyPrint is not properly configured. "
+                "See docs/pdf-export.md for installation instructions."
+            )
+
+        try:
+            # First generate HTML content (reuse existing HTML template)
+            html_content = self.render_html(data, generate_charts=generate_charts)
+            logger.debug(
+                "Converting HTML to PDF", extra={"tenant": data.get("tenant_name")}
+            )
+
+            # Convert HTML to PDF
+            pdf_bytes = self.pdf_exporter.html_to_pdf(html_content)
+
+            logger.info(
+                "PDF report generated successfully",
+                extra={
+                    "tenant": data.get("tenant_name"),
+                    "pdf_size": len(pdf_bytes),
+                },
+            )
+
+            return pdf_bytes
+
+        except Exception as e:
+            logger.error("Failed to render PDF report", extra={"error": str(e)})
+            raise RuntimeError(f"Failed to render PDF report: {e}") from e
 
     def _generate_visuals_and_evidence(
         self, data: dict[str, Any]

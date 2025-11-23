@@ -1075,8 +1075,8 @@ BQ_DATASET=paid_social
 - [x] Insights module imports: `python -c "from paid_social_nav.insights import InsightsGenerator"`
 - [x] Linting passes: `ruff check paid_social_nav/insights/`
 - [x] Type checking passes: `mypy paid_social_nav/insights/`
-- [ ] Skills command runs (without API key): `psn skills audit --tenant-id puttery --audit-config configs/audit_puttery.yaml`
-- [ ] Skills command runs (with API key): `ANTHROPIC_API_KEY=sk-... psn skills audit --tenant-id puttery --audit-config configs/audit_puttery.yaml`
+- [x] Skills command runs (without API key): `psn skills audit --tenant-id puttery --audit-config configs/audit_puttery.yaml`
+- [x] Skills command runs (with API key): `ANTHROPIC_API_KEY=sk-... psn skills audit --tenant-id puttery --audit-config configs/audit_puttery.yaml`
 
 #### Manual Verification:
 - [x] Without API key: Reports generate successfully, insights sections are empty
