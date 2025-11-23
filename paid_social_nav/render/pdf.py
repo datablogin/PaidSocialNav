@@ -144,19 +144,20 @@ class PDFExporter:
             )
 
         try:
-            from weasyprint import HTML  # type: ignore
+            from weasyprint import HTML
 
             logger.debug("Converting HTML to PDF", extra={"html_length": len(html_content)})
 
             # Define the PDF generation function
             def _generate_pdf() -> bytes:
                 html = HTML(string=html_content, base_url=base_url)
-                return html.write_pdf()
+                result: bytes = html.write_pdf()
+                return result
 
             # Run with timeout protection
             try:
                 pdf_bytes: bytes = _run_with_timeout(_generate_pdf, (), timeout_seconds)
-            except TimeoutError:
+            except TimeoutError as e:
                 logger.error(
                     f"PDF generation exceeded {timeout_seconds}s timeout",
                     extra={"html_size": len(html_content), "timeout": timeout_seconds},
@@ -164,7 +165,7 @@ class PDFExporter:
                 raise RuntimeError(
                     f"PDF generation timed out after {timeout_seconds}s. "
                     "Try reducing the report size or increasing the timeout."
-                )
+                ) from e
 
             logger.info(
                 "PDF generated successfully",

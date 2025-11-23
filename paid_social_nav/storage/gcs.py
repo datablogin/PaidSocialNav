@@ -104,8 +104,8 @@ def upload_file_to_gcs(
         raise ValueError("Either local_path or content_bytes must be provided")
 
     try:
-        from google.api_core import exceptions as gcp_exceptions  # type: ignore
-        from google.cloud import storage  # type: ignore
+        from google.api_core import exceptions as gcp_exceptions
+        from google.cloud import storage  # type: ignore[import-untyped]
 
         # Parse GCS URI
         bucket_name, blob_path = parse_gcs_uri(gcs_uri)
@@ -170,7 +170,7 @@ def upload_file_to_gcs(
                 blob.upload_from_filename(local_path, content_type=content_type)
                 file_size = Path(local_path).stat().st_size
             else:
-                blob.upload_from_string(content_bytes, content_type=content_type)  # type: ignore
+                blob.upload_from_string(content_bytes, content_type=content_type)
                 file_size = len(content_bytes) if content_bytes else 0
 
             logger.info(
