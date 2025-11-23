@@ -12,6 +12,7 @@ from ..core.logging_config import get_logger, setup_logging
 from ..core.sync import sync_meta_insights
 from ..render.renderer import write_text
 from ..skills.audit_workflow import AuditWorkflowSkill
+from . import output as cli_output
 
 app = typer.Typer(help="PaidSocialNav CLI")
 meta_app = typer.Typer(help="Meta platform commands")
@@ -121,20 +122,16 @@ def meta_sync_insights(
     if tenant:
         t = get_tenant(tenant)
         if not t:
-            typer.secho(
-                f"Tenant '{tenant}' not found in configs/tenants.yaml",
-                fg=typer.colors.RED,
-            )
+            cli_output.error(f"Tenant '{tenant}' not found in configs/tenants.yaml")
             raise typer.Exit(code=1)
         project_id = t.project_id
         dataset = t.dataset
         tenant_default_level = t.default_level
 
     if not project_id or not dataset:
-        typer.secho(
+        cli_output.error(
             "Missing GCP project/dataset configuration. Set env vars GCP_PROJECT_ID and BQ_DATASET, "
-            "or specify a valid --tenant from configs/tenants.yaml.",
-            fg=typer.colors.RED,
+            "or specify a valid --tenant from configs/tenants.yaml."
         )
         raise typer.Exit(code=1)
 
@@ -147,25 +144,20 @@ def meta_sync_insights(
                 project_id=project_id, secret_id=secret_name, version=secret_version
             )
         except Exception as e:
-            typer.secho(
-                f"Failed to read secret '{secret_name}' from project '{project_id}': {e}",
-                fg=typer.colors.RED,
-            )
+            logger.exception("Secret access failed", extra={
+                "secret_name": secret_name,
+                "project_id": project_id,
+            })
+            cli_output.error(f"Failed to read secret '{secret_name}' from project '{project_id}': {e}")
             raise typer.Exit(code=1) from e
 
     if not access_token:
-        typer.secho(
-            "No Meta access token provided. Set META_ACCESS_TOKEN or use --use-secret.",
-            fg=typer.colors.RED,
-        )
+        cli_output.error("No Meta access token provided. Set META_ACCESS_TOKEN or use --use-secret.")
         raise typer.Exit(code=1)
 
     # Date precedence: allow both, prefer explicit since/until with a warning
     if date_preset is not None and (since or until):
-        typer.secho(
-            "Warning: --date-preset provided together with --since/--until; explicit dates will be used.",
-            fg=typer.colors.YELLOW,
-        )
+        cli_output.warning("--date-preset provided together with --since/--until; explicit dates will be used.")
         date_preset = None
 
     # Validate date formats if provided
@@ -179,14 +171,14 @@ def meta_sync_insights(
             return False
 
     if since and not _valid_date(since):
-        typer.secho("--since must be in YYYY-MM-DD format.", fg=typer.colors.RED)
+        cli_output.error("--since must be in YYYY-MM-DD format.")
         raise typer.Exit(code=1)
     if until and not _valid_date(until):
-        typer.secho("--until must be in YYYY-MM-DD format.", fg=typer.colors.RED)
+        cli_output.error("--until must be in YYYY-MM-DD format.")
         raise typer.Exit(code=1)
 
     if since and until and since > until:
-        typer.secho("--since cannot be after --until.", fg=typer.colors.RED)
+        cli_output.error("--since cannot be after --until.")
         raise typer.Exit(code=1)
 
     # Resolve levels: explicit --levels overrides --level and disables fallback
@@ -196,10 +188,7 @@ def meta_sync_insights(
             parts = [p.strip().lower() for p in levels.split(",") if p.strip()]
             parsed_levels = [Entity(p) for p in parts]
         except Exception:
-            typer.secho(
-                "Invalid --levels value. Use a comma-separated list of: ad, adset, campaign.",
-                fg=typer.colors.RED,
-            )
+            cli_output.error("Invalid --levels value. Use a comma-separated list of: ad, adset, campaign.")
             raise typer.Exit(code=1) from None
 
     # Determine effective single-level if --levels not provided
@@ -209,10 +198,7 @@ def meta_sync_insights(
     breakdown_list = None
     if breakdowns:
         breakdown_list = [b.strip() for b in breakdowns.split(",")]
-        typer.secho(
-            f"Requesting demographic breakdowns: {', '.join(breakdown_list)}",
-            fg=typer.colors.YELLOW
-        )
+        cli_output.info(f"Requesting demographic breakdowns: {', '.join(breakdown_list)}")
 
     try:
         summary = sync_meta_insights(
@@ -233,13 +219,15 @@ def meta_sync_insights(
             page_size=page_size,
         )
     except Exception as e:
-        typer.secho(f"Sync failed: {e}", fg=typer.colors.RED)
+        logger.exception("Meta insights sync failed", extra={
+            "account_id": account_id,
+            "project_id": project_id,
+            "dataset": dataset,
+        })
+        cli_output.error(f"Sync failed: {e}")
         raise typer.Exit(code=1) from e
 
-    typer.secho(
-        f"Loaded {summary['rows']} rows into {project_id}.{dataset}.fct_ad_insights_daily",
-        fg=typer.colors.GREEN,
-    )
+    cli_output.success(f"Loaded {summary['rows']} rows into {project_id}.{dataset}.fct_ad_insights_daily")
 
 
 @meta_app.command("sync-dimensions")
@@ -290,19 +278,15 @@ def meta_sync_dimensions(
     if tenant:
         t = get_tenant(tenant)
         if not t:
-            typer.secho(
-                f"Tenant '{tenant}' not found in configs/tenants.yaml",
-                fg=typer.colors.RED,
-            )
+            cli_output.error(f"Tenant '{tenant}' not found in configs/tenants.yaml")
             raise typer.Exit(code=1)
         project_id = t.project_id
         dataset = t.dataset
 
     if not project_id or not dataset:
-        typer.secho(
+        cli_output.error(
             "Missing GCP project/dataset configuration. Set env vars GCP_PROJECT_ID and BQ_DATASET, "
-            "or specify a valid --tenant from configs/tenants.yaml.",
-            fg=typer.colors.RED,
+            "or specify a valid --tenant from configs/tenants.yaml."
         )
         raise typer.Exit(code=1)
 
@@ -315,17 +299,15 @@ def meta_sync_dimensions(
                 project_id=project_id, secret_id=secret_name, version=secret_version
             )
         except Exception as e:
-            typer.secho(
-                f"Failed to read secret '{secret_name}' from project '{project_id}': {e}",
-                fg=typer.colors.RED,
-            )
+            logger.exception("Secret access failed", extra={
+                "secret_name": secret_name,
+                "project_id": project_id,
+            })
+            cli_output.error(f"Failed to read secret '{secret_name}' from project '{project_id}': {e}")
             raise typer.Exit(code=1) from e
 
     if not access_token:
-        typer.secho(
-            "No Meta access token provided. Set META_ACCESS_TOKEN or use --use-secret.",
-            fg=typer.colors.RED,
-        )
+        cli_output.error("No Meta access token provided. Set META_ACCESS_TOKEN or use --use-secret.")
         raise typer.Exit(code=1)
 
     try:
@@ -339,16 +321,21 @@ def meta_sync_dimensions(
             retry_backoff=retry_backoff_seconds,
         )
     except Exception as e:
-        typer.secho(f"Dimension sync failed: {e}", fg=typer.colors.RED)
+        logger.exception("Dimension sync failed", extra={
+            "account_id": account_id,
+            "project_id": project_id,
+            "dataset": dataset,
+        })
+        cli_output.error(f"Dimension sync failed: {e}")
         raise typer.Exit(code=1) from e
 
-    typer.secho("\nDimension sync completed successfully!", fg=typer.colors.GREEN)
-    typer.secho(f"\nRecords synced to {project_id}.{dataset}:", fg=typer.colors.CYAN)
-    typer.secho(f"  - Accounts: {counts['account']}", fg=typer.colors.WHITE)
-    typer.secho(f"  - Campaigns: {counts['campaigns']}", fg=typer.colors.WHITE)
-    typer.secho(f"  - Ad Sets: {counts['adsets']}", fg=typer.colors.WHITE)
-    typer.secho(f"  - Ads: {counts['ads']}", fg=typer.colors.WHITE)
-    typer.secho(f"  - Creatives: {counts['creatives']}", fg=typer.colors.WHITE)
+    cli_output.success("Dimension sync completed successfully!")
+    cli_output.info(f"Records synced to {project_id}.{dataset}:")
+    cli_output.plain(f"  - Accounts: {counts['account']}")
+    cli_output.plain(f"  - Campaigns: {counts['campaigns']}")
+    cli_output.plain(f"  - Ad Sets: {counts['adsets']}")
+    cli_output.plain(f"  - Ads: {counts['ads']}")
+    cli_output.plain(f"  - Creatives: {counts['creatives']}")
 
 
 @audit_app.command("run")
@@ -386,30 +373,14 @@ def audit_run(
     from ..render.pdf import write_pdf
     from ..storage.gcs import upload_file_to_gcs
 
-    # Run audit with error handling
-    try:
-        result = run_audit(config)
-    except RuntimeError as e:
-        # BigQuery or other runtime errors
-        typer.secho(f"Audit failed: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=1) from None
-    except Exception as e:
-        # Unexpected errors
-        typer.secho(
-            f"Unexpected error during audit: {e}",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=1) from None
-
-    # Load tenant name and windows from config
+    # Load tenant name and windows from config first
     try:
         cfg = yaml.safe_load(Path(config).read_text())
     except FileNotFoundError:
-        typer.secho(f"Config file not found: {config}", fg=typer.colors.RED, err=True)
+        cli_output.error(f"Config file not found: {config}")
         raise typer.Exit(code=1) from None
     except yaml.YAMLError as e:
-        typer.secho(f"Invalid YAML in config: {e}", fg=typer.colors.RED, err=True)
+        cli_output.error(f"Invalid YAML in config: {e}")
         raise typer.Exit(code=1) from None
 
     tenant_name = cfg.get("tenant", "Client")
@@ -425,6 +396,47 @@ def audit_run(
             period = datetime.now().strftime("%Y")
     else:
         period = datetime.now().strftime("%Y")
+
+    # 1. Log start of audit
+    logger.info("Starting audit", extra={
+        "tenant": tenant_name,
+        "config": config,
+        "output": output,
+    })
+
+    # 2. Log after config load
+    logger.info("Audit config loaded", extra={
+        "tenant": tenant_name,
+        "windows": windows,
+        "period": period,
+    })
+
+    # 3. Log before audit execution
+    logger.info("Executing audit", extra={
+        "tenant": tenant_name,
+    })
+
+    # Run audit with error handling
+    try:
+        result = run_audit(config)
+    except RuntimeError as e:
+        # BigQuery or other runtime errors
+        cli_output.error(f"Audit failed: {e}")
+        raise typer.Exit(code=1) from None
+    except Exception as e:
+        # Unexpected errors
+        logger.exception("Unexpected error during audit", extra={
+            "config": config,
+        })
+        cli_output.error(f"Unexpected error during audit: {e}")
+        raise typer.Exit(code=1) from None
+
+    # 4. Log after audit completion
+    logger.info("Audit completed", extra={
+        "tenant": tenant_name,
+        "score": result.overall_score,
+        "rules_count": len(result.rules),
+    })
 
     # Prepare data for template
     data = {
@@ -448,21 +460,31 @@ def audit_run(
         md = renderer.render_markdown(data)
         if output:
             write_text(output, md)
-            typer.echo(f"Markdown report written to {output}")
+            cli_output.success(f"Report written to {output}")
+            # 5a. Log Markdown report generation
+            logger.info("Markdown report generated", extra={
+                "tenant": tenant_name,
+                "markdown_path": output,
+            })
         elif "md" in formats and not html_output and not pdf_output:
             # Output to console if --format md but no explicit output path
             typer.echo(md)
         if assets_dir and output:
-            typer.echo(f"Chart images saved to {assets_dir}")
+            cli_output.info(f"Chart images saved to {assets_dir}")
 
     # Generate HTML if requested (via --html-output or --format)
     if html_output or "html" in formats:
         html = renderer.render_html(data)
         html_path = html_output or f"{tenant_name}_audit_{datetime.now().strftime('%Y%m%d')}.html"
         write_text(html_path, html)
-        typer.echo(f"HTML report written to {html_path}")
+        cli_output.success(f"Report written to {html_path}")
+        # 5b. Log HTML report generation
+        logger.info("HTML report generated", extra={
+            "tenant": tenant_name,
+            "html_path": html_path,
+        })
         if assets_dir:
-            typer.echo(f"Chart images saved to {assets_dir}")
+            cli_output.info(f"Chart images saved to {assets_dir}")
 
     # Generate PDF if requested (via --pdf-output or --format)
     if pdf_output or "pdf" in formats:
@@ -470,7 +492,12 @@ def audit_run(
             pdf_bytes = renderer.render_pdf(data)
             pdf_path = pdf_output or f"{tenant_name}_audit_{datetime.now().strftime('%Y%m%d')}.pdf"
             write_pdf(pdf_path, pdf_bytes)
-            typer.secho(f"PDF report written to {pdf_path}", fg=typer.colors.GREEN)
+            cli_output.success(f"Report written to {pdf_path}")
+            # 5c. Log PDF report generation
+            logger.info("PDF report generated", extra={
+                "tenant": tenant_name,
+                "pdf_path": pdf_path,
+            })
 
             # Upload to GCS if requested
             if upload:
@@ -481,17 +508,19 @@ def audit_run(
                         content_type="application/pdf",
                         make_public=False,
                     )
-                    typer.secho(f"PDF uploaded to: {gcs_url}", fg=typer.colors.GREEN)
+                    cli_output.success(f"PDF uploaded to: {gcs_url}")
+                    # 5d. Log GCS upload
+                    logger.info("PDF uploaded to GCS", extra={
+                        "tenant": tenant_name,
+                        "gcs_url": gcs_url,
+                    })
                 except (ValueError, RuntimeError) as e:
-                    typer.secho(f"Failed to upload to GCS: {e}", fg=typer.colors.RED, err=True)
+                    cli_output.error(f"Failed to upload to GCS: {e}")
                     raise typer.Exit(code=1) from None
 
         except RuntimeError as e:
-            typer.secho(f"PDF generation failed: {e}", fg=typer.colors.RED, err=True)
-            typer.secho(
-                "Ensure WeasyPrint is properly installed. See docs/pdf-export.md for instructions.",
-                fg=typer.colors.YELLOW,
-            )
+            cli_output.error(f"PDF generation failed: {e}")
+            cli_output.warning("Ensure WeasyPrint is properly installed. See docs/pdf-export.md for instructions.")
             raise typer.Exit(code=1) from None
 
     # If no outputs specified, output Markdown to console
@@ -560,22 +589,23 @@ def run_audit_skill(
     result = skill.execute(context)
 
     if result.success:
-        typer.secho(f"✅ {result.message}", fg=typer.colors.GREEN)
-        typer.echo("\nReports generated:")
-        typer.echo(f"  Markdown: {result.data['markdown_report']}")
-        typer.echo(f"  HTML: {result.data['html_report']}")
+        cli_output.success(result.message)
+        cli_output.plain("\nReports generated:")
+        cli_output.plain(f"  Markdown: {result.data['markdown_report']}")
+        cli_output.plain(f"  HTML: {result.data['html_report']}")
 
         if "pdf_report" in result.data:
-            typer.echo(f"  PDF: {result.data['pdf_report']}")
+            cli_output.plain(f"  PDF: {result.data['pdf_report']}")
 
         if "pdf_gcs_url" in result.data:
-            typer.echo(f"  PDF (GCS): {result.data['pdf_gcs_url']}")
+            cli_output.plain(f"  PDF (GCS): {result.data['pdf_gcs_url']}")
 
         if result.data.get("sheet_url"):
-            typer.echo("\n📊 Google Sheets:")
-            typer.echo(f"  {result.data['sheet_url']}")
+            typer.echo("")  # Blank line
+            cli_output.data("Google Sheets:")
+            cli_output.plain(f"  {result.data['sheet_url']}")
     else:
-        typer.secho(f"❌ {result.message}", fg=typer.colors.RED, err=True)
+        cli_output.error(result.message)
         raise typer.Exit(code=1)
 
 
