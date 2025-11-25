@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 from fastmcp import Context
@@ -12,6 +13,12 @@ from paid_social_nav.core.sync import sync_meta_insights
 from paid_social_nav.core.tenants import get_tenant
 from paid_social_nav.skills.audit_workflow import AuditWorkflowSkill
 from paid_social_nav.storage.bq import load_benchmarks_csv
+
+
+class ValidationError(ValueError):
+    """Raised when input validation fails."""
+
+    pass
 
 
 async def meta_sync_insights_tool(
@@ -40,6 +47,24 @@ async def meta_sync_insights_tool(
         {"rows": int, "table": str, "success": bool}
     """
     try:
+        # Validate account_id format (must be act_<digits> or just digits)
+        if not re.match(r"^(act_)?\d+$", account_id):
+            raise ValidationError(
+                f"Invalid account_id format: '{account_id}'. "
+                "Must be 'act_123456789' or '123456789'"
+            )
+
+        # Normalize account_id to include 'act_' prefix
+        if not account_id.startswith("act_"):
+            account_id = f"act_{account_id}"
+
+        # Validate level
+        allowed_levels = {"ad", "adset", "campaign"}
+        if level.lower() not in allowed_levels:
+            raise ValidationError(
+                f"Invalid level: '{level}'. Must be one of: {', '.join(allowed_levels)}"
+            )
+
         if ctx:
             await ctx.info(f"Starting sync for account {account_id} at {level} level")
 

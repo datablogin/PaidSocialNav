@@ -241,11 +241,7 @@ def main():
     )
     parser.add_argument(
         "--meta-token-file",
-        help="Path to file containing Meta API access token (more secure than --meta-token)",
-    )
-    parser.add_argument(
-        "--meta-token",
-        help="Meta API access token (DEPRECATED: use --meta-token-file or stdin for security)",
+        help="Path to file containing Meta API access token (required for secure token input)",
     )
     parser.add_argument(
         "--registry-project",
@@ -270,18 +266,11 @@ def main():
     # Get Meta token securely
     meta_token = None
     if args.meta_token_file:
-        # Read from file (more secure)
+        # Read from file (secure)
         with open(args.meta_token_file) as f:
             meta_token = f.read().strip()
-    elif args.meta_token:
-        # Direct argument (less secure, show warning)
-        meta_token = args.meta_token
-        print(
-            "⚠️  WARNING: Passing tokens via --meta-token is insecure. "
-            "Use --meta-token-file instead."
-        )
     else:
-        # Prompt securely if not provided
+        # Prompt securely if not provided via file
         import getpass
 
         meta_token = getpass.getpass("Enter Meta access token (or press Enter to skip): ")

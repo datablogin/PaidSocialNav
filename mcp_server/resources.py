@@ -95,6 +95,7 @@ def get_campaign_insights_resource(tenant_id: str, window: str) -> str:
       AND level = 'campaign'
     GROUP BY 1, 2, 3
     ORDER BY date DESC, spend DESC
+    LIMIT 1000
     """
 
     try:

@@ -11,15 +11,19 @@ Architecture:
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from google.api_core import exceptions as gcp_exceptions
 from google.cloud import bigquery
 
 from paid_social_nav.core.tenants import Tenant, get_tenant as get_tenant_from_yaml
 from paid_social_nav.storage.bq import BQClient
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -82,10 +86,14 @@ class CustomerRegistry:
             )
         self.registry_dataset = "paidsocialnav_registry"
         self.customers_table = f"{self.registry_project_id}.{self.registry_dataset}.customers"
+        # Cache BigQuery client for reuse across operations
+        self._bq_client: BQClient | None = None
 
     def _get_bq_client(self) -> BQClient:
-        """Get BigQuery client for registry."""
-        return BQClient(project=self.registry_project_id)
+        """Get BigQuery client for registry (cached for reuse)."""
+        if self._bq_client is None:
+            self._bq_client = BQClient(project=self.registry_project_id)
+        return self._bq_client
 
     def ensure_registry_exists(self) -> None:
         """Create registry dataset and tables if they don't exist.
@@ -169,8 +177,14 @@ class CustomerRegistry:
                     tags=row.tags,
                     notes=row.notes,
                 )
-        except Exception as e:
-            print(f"⚠ Could not query BigQuery registry: {e}")
+        except gcp_exceptions.NotFound:
+            logger.error(f"Registry table not found: {self.customers_table}")
+        except gcp_exceptions.Forbidden:
+            logger.error(f"Access denied to registry: {self.customers_table}")
+        except gcp_exceptions.DeadlineExceeded:
+            logger.error("BigQuery query timeout while fetching customer")
+        except Exception:
+            logger.exception("Unexpected error querying customer registry")
 
         # Fallback to YAML
         tenant = get_tenant_from_yaml(customer_id)
@@ -204,9 +218,14 @@ class CustomerRegistry:
         try:
             bq = self._get_bq_client()
 
+            # Use parameterized query to prevent SQL injection
+            query_parameters = []
             where_clause = ""
             if status:
-                where_clause = f"WHERE status = '{status}'"
+                where_clause = "WHERE status = @status"
+                query_parameters.append(
+                    bigquery.ScalarQueryParameter("status", "STRING", status)
+                )
 
             query = f"""
             SELECT
@@ -228,10 +247,15 @@ class CustomerRegistry:
             FROM `{self.customers_table}`
             {where_clause}
             ORDER BY onboarded_at DESC
-            LIMIT {limit}
+            LIMIT @limit
             """
 
-            rows = bq.client.query(query).result()
+            query_parameters.append(
+                bigquery.ScalarQueryParameter("limit", "INT64", limit)
+            )
+
+            job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
+            rows = bq.client.query(query, job_config=job_config).result()
 
             return [
                 Customer(
@@ -253,8 +277,17 @@ class CustomerRegistry:
                 )
                 for row in rows
             ]
-        except Exception as e:
-            print(f"⚠ Could not list customers from BigQuery: {e}")
+        except gcp_exceptions.NotFound:
+            logger.error(f"Registry table not found: {self.customers_table}")
+            return []
+        except gcp_exceptions.Forbidden:
+            logger.error(f"Access denied to registry: {self.customers_table}")
+            return []
+        except gcp_exceptions.DeadlineExceeded:
+            logger.error("BigQuery query timeout while listing customers")
+            return []
+        except Exception:
+            logger.exception("Unexpected error listing customers from BigQuery")
             return []
 
     def add_customer(

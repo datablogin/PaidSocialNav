@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def get_auth_provider() -> Any | None:
@@ -17,8 +20,12 @@ def get_auth_provider() -> Any | None:
 
     Returns:
         Authentication provider instance or None for local development
+
+    Raises:
+        ValueError: If attempting to use no authentication in production
     """
     auth_type = os.environ.get("MCP_AUTH_TYPE", "none")
+    environment = os.environ.get("ENVIRONMENT", "development")
 
     if auth_type == "google":
         try:
@@ -51,7 +58,17 @@ def get_auth_provider() -> Any | None:
             ) from e
 
     elif auth_type == "none":
-        # Local development only - NO AUTHENTICATION
+        # Require explicit opt-in for no auth - prevent accidental production deployment
+        if environment == "production":
+            raise ValueError(
+                "Cannot use MCP_AUTH_TYPE=none in production environment. "
+                "Set MCP_AUTH_TYPE to 'google' or 'jwt' for secure authentication."
+            )
+
+        logger.warning(
+            "⚠️  Running MCP server with NO AUTHENTICATION - development only. "
+            "Never deploy to production without authentication!"
+        )
         return None
 
     else:
