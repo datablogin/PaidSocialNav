@@ -24,8 +24,8 @@ class ValidationError(ValueError):
 async def meta_sync_insights_tool(
     account_id: str,
     tenant_id: str,
-    level: str = "ad",
-    date_preset: str | None = None,
+    level: Entity | str = "ad",
+    date_preset: DatePreset | str | None = None,
     since: str | None = None,
     until: str | None = None,
     ctx: Context | None = None,
@@ -38,13 +38,18 @@ async def meta_sync_insights_tool(
     Args:
         account_id: Meta ad account ID (e.g., "act_123456789" or "123456789")
         tenant_id: Tenant ID from configs/tenants.yaml
-        level: Aggregation level (ad, adset, or campaign)
-        date_preset: Named date range (yesterday, last_7d, last_28d, etc.)
+        level: Aggregation level (Entity enum or string: ad, adset, campaign)
+        date_preset: Named date range (DatePreset enum or string: yesterday, last_7d, last_28d, etc.)
         since: Start date (YYYY-MM-DD) if not using preset
         until: End date (YYYY-MM-DD) if not using preset
 
     Returns:
-        {"rows": int, "table": str, "success": bool}
+        Success: {"success": True, "rows": int, "table": str, "message": str}
+        Failure: {"success": False, "error": str, "message": str}
+
+    Raises:
+        ValidationError: If account_id format is invalid or level is not allowed
+        ValueError: If tenant not found or META_ACCESS_TOKEN not set
     """
     try:
         # Validate account_id format (must be act_<digits> or just digits)
@@ -58,15 +63,25 @@ async def meta_sync_insights_tool(
         if not account_id.startswith("act_"):
             account_id = f"act_{account_id}"
 
-        # Validate level
-        allowed_levels = {"ad", "adset", "campaign"}
-        if level.lower() not in allowed_levels:
-            raise ValidationError(
-                f"Invalid level: '{level}'. Must be one of: {', '.join(allowed_levels)}"
-            )
+        # Normalize level to Entity enum (accept both string and enum for MCP compatibility)
+        if isinstance(level, str):
+            allowed_levels = {"ad", "adset", "campaign"}
+            if level.lower() not in allowed_levels:
+                raise ValidationError(
+                    f"Invalid level: '{level}'. Must be one of: {', '.join(allowed_levels)}"
+                )
+            level_enum = Entity(level.lower())
+        else:
+            level_enum = level
+
+        # Normalize date preset to DatePreset enum if provided
+        if isinstance(date_preset, str):
+            preset_enum = DatePreset(date_preset.upper())
+        else:
+            preset_enum = date_preset
 
         if ctx:
-            await ctx.info(f"Starting sync for account {account_id} at {level} level")
+            await ctx.info(f"Starting sync for account {account_id} at {level_enum.value} level")
 
         # Get tenant configuration
         tenant = get_tenant(tenant_id)
@@ -77,12 +92,6 @@ async def meta_sync_insights_tool(
         access_token = os.environ.get("META_ACCESS_TOKEN")
         if not access_token:
             raise ValueError("META_ACCESS_TOKEN environment variable not set")
-
-        # Convert level string to Entity enum
-        level_enum = Entity(level.lower())
-
-        # Convert date preset string to DatePreset enum if provided
-        preset_enum = DatePreset(date_preset.upper()) if date_preset else None
 
         if ctx:
             await ctx.info(f"Syncing to {tenant.project_id}.{tenant.dataset}")
@@ -143,12 +152,22 @@ async def audit_workflow_tool(
         sheets_export: Whether to export to Google Sheets
 
     Returns:
-        {
-            "success": bool,
+        Success: {
+            "success": True,
             "audit_score": float,
             "reports": {"md": str, "html": str, "pdf": str},
-            "sheet_url": str | None
+            "sheet_url": str | None,
+            "message": str
         }
+        Failure: {
+            "success": False,
+            "error": str,
+            "message": str
+        }
+
+    Raises:
+        ValueError: If tenant not found or audit configuration is invalid
+        FileNotFoundError: If audit config file doesn't exist
     """
     try:
         if ctx:
@@ -208,7 +227,21 @@ async def get_tenant_config_tool(
         tenant_id: Tenant identifier
 
     Returns:
-        {"id": str, "project_id": str, "dataset": str, "default_level": str}
+        Success: {
+            "success": True,
+            "id": str,
+            "project_id": str,
+            "dataset": str,
+            "default_level": str
+        }
+        Failure: {
+            "success": False,
+            "error": str,
+            "message": str
+        }
+
+    Raises:
+        ValueError: If tenant_id is not found in configuration
     """
     try:
         # Use existing get_tenant from paid_social_nav.core.tenants:27
@@ -261,7 +294,21 @@ async def load_benchmarks_tool(
         csv_path: Path to benchmarks CSV file
 
     Returns:
-        {"rows_loaded": int, "table": str, "success": bool}
+        Success: {
+            "success": True,
+            "rows_loaded": int,
+            "table": str,
+            "message": str
+        }
+        Failure: {
+            "success": False,
+            "error": str,
+            "message": str
+        }
+
+    Raises:
+        FileNotFoundError: If csv_path doesn't exist
+        ValueError: If CSV format is invalid or BigQuery load fails
     """
     try:
         if ctx:

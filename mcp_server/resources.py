@@ -22,23 +22,17 @@ def list_tenants() -> list[dict[str, Any]]:
         data = yaml.safe_load(f) or {}
 
     tenants_data = data.get("tenants", {})
-    result = []
 
-    for tenant_id, _cfg in tenants_data.items():
-        tenant = get_tenant(tenant_id)
-        if tenant:
-            result.append(
-                {
-                    "id": tenant.id,
-                    "project_id": tenant.project_id,
-                    "dataset": tenant.dataset,
-                    "default_level": (
-                        tenant.default_level.value if tenant.default_level else None
-                    ),
-                }
-            )
-
-    return result
+    # Build tenant list directly without extra lookups to avoid N+1 query pattern
+    return [
+        {
+            "id": tenant_id,
+            "project_id": cfg.get("project_id"),
+            "dataset": cfg.get("dataset", "paid_social"),
+            "default_level": cfg.get("default_level", "campaign"),
+        }
+        for tenant_id, cfg in tenants_data.items()
+    ]
 
 
 def get_tenant_list_resource() -> str:

@@ -353,7 +353,30 @@ class CustomerRegistry:
 
         print(f"✓ Customer '{customer_id}' added to registry")
 
-        return self.get_customer(customer_id)  # type: ignore[return-value]
+        # Return customer object directly from row data to avoid eventual consistency issues
+        # BigQuery streaming inserts have eventual consistency, so get_customer() might not
+        # immediately find the newly inserted row
+        customer = Customer(
+            customer_id=row["customer_id"],
+            customer_name=row["customer_name"],
+            gcp_project_id=row["gcp_project_id"],
+            bq_dataset=row["bq_dataset"],
+            meta_ad_account_ids=row.get("meta_ad_account_ids"),
+            default_level=row.get("default_level", "campaign"),
+            active_platforms=row.get("active_platforms"),
+            status=row.get("status", "active"),
+            onboarded_at=datetime.fromisoformat(row["onboarded_at"])
+            if isinstance(row["onboarded_at"], str)
+            else row["onboarded_at"],
+            updated_at=datetime.fromisoformat(row["updated_at"])
+            if isinstance(row["updated_at"], str)
+            else row["updated_at"],
+            usage_tier=row.get("usage_tier", "standard"),
+            primary_contact_email=row.get("primary_contact_email"),
+            tags=row.get("tags"),
+            notes=row.get("notes"),
+        )
+        return customer
 
     def _infer_bq_type(self, value: Any) -> str:
         """Infer BigQuery type from Python value."""
