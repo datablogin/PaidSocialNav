@@ -128,8 +128,18 @@ async def test_get_tenant_config_validation(
 async def test_health_check():
     """Test health check endpoint."""
     from mcp_server.server import health_check
+    from unittest.mock import Mock
 
-    result = health_check()
+    # Mock the request object
+    mock_request = Mock()
+    response = health_check(mock_request)
 
-    assert result["status"] == "healthy"
-    assert "PaidSocialNav" in result["service"]
+    # Verify response is a JSONResponse
+    assert response.status_code == 200
+
+    # Parse JSON body
+    import json
+
+    body_data = json.loads(response.body.decode())
+    assert body_data["status"] == "healthy"
+    assert "PaidSocialNav" in body_data["service"]

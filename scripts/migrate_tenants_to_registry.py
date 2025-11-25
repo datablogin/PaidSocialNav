@@ -66,13 +66,13 @@ def migrate_tenants(
         print(f"  Default Level: {default_level}")
 
         if dry_run:
-            print(f"  [DRY RUN] Would add to registry")
+            print("  [DRY RUN] Would add to registry")
             continue
 
         # Check if already exists
         existing = registry.get_customer(tenant_id)
         if existing:
-            print(f"  ℹ️  Customer already exists in registry, skipping")
+            print("  ℹ️  Customer already exists in registry, skipping")
             continue
 
         # Add to registry
@@ -86,7 +86,7 @@ def migrate_tenants(
                 tags=["migrated_from_yaml"],
                 created_by="migration_script",
             )
-            print(f"  ✅ Added to registry")
+            print("  ✅ Added to registry")
         except Exception as e:
             print(f"  ❌ Failed to add: {e}")
 

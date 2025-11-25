@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime
 
 from google.cloud import bigquery, secretmanager
 from paid_social_nav.core.customer_registry import CustomerRegistry
@@ -99,7 +98,7 @@ def store_meta_credentials(
 
     # Create secret
     try:
-        secret = secret_client.create_secret(
+        secret_client.create_secret(
             request={
                 "parent": parent,
                 "secret_id": secret_id,
@@ -119,13 +118,13 @@ def store_meta_credentials(
 
     # Add version with actual token
     try:
-        version = secret_client.add_secret_version(
+        secret_client.add_secret_version(
             request={
                 "parent": f"{parent}/secrets/{secret_id}",
                 "payload": {"data": meta_access_token.encode("UTF-8")},
             }
         )
-        print(f"✓ Secret version added")
+        print("✓ Secret version added")
     except Exception as e:
         print(f"✗ Failed to add secret version: {e}")
         return ""
@@ -193,7 +192,7 @@ def onboard_customer(
     # Add to registry
     print(f"\n✍️  Adding {customer_id} to customer registry...")
     try:
-        customer = registry.add_customer(
+        registry.add_customer(
             customer_id=customer_id,
             customer_name=customer_name,
             gcp_project_id=gcp_project_id,
@@ -205,25 +204,25 @@ def onboard_customer(
             tags=tags or [],
             created_by=created_by or "onboarding_script",
         )
-        print(f"✓ Customer added to registry")
+        print("✓ Customer added to registry")
     except Exception as e:
         print(f"✗ Failed to add customer to registry: {e}")
         return
 
     print(f"\n{'='*60}")
-    print(f"✅ Customer onboarding complete!")
+    print("✅ Customer onboarding complete!")
     print(f"{'='*60}")
-    print(f"\nNext steps:")
-    print(f"1. Run initial data sync:")
+    print("\nNext steps:")
+    print("1. Run initial data sync:")
     print(
         f"   python -m paid_social_nav.cli.main sync-meta {meta_ad_account_ids[0]} --tenant={customer_id}"
     )
-    print(f"2. Run audit:")
+    print("2. Run audit:")
     print(
         f"   python -m paid_social_nav.cli.main audit --tenant={customer_id} --config=configs/audit_config.yaml"
     )
-    print(f"3. View customer in registry:")
-    print(f"   python scripts/list_customers.py")
+    print("3. View customer in registry:")
+    print("   python scripts/list_customers.py")
     print()
 
 
@@ -241,8 +240,12 @@ def main():
         help="Comma-separated Meta ad account IDs",
     )
     parser.add_argument(
+        "--meta-token-file",
+        help="Path to file containing Meta API access token (more secure than --meta-token)",
+    )
+    parser.add_argument(
         "--meta-token",
-        help="Meta API access token (will be stored in Secret Manager)",
+        help="Meta API access token (DEPRECATED: use --meta-token-file or stdin for security)",
     )
     parser.add_argument(
         "--registry-project",
@@ -264,6 +267,27 @@ def main():
     meta_accounts = [acc.strip() for acc in args.meta_accounts.split(",")]
     tags = [tag.strip() for tag in args.tags.split(",")] if args.tags else None
 
+    # Get Meta token securely
+    meta_token = None
+    if args.meta_token_file:
+        # Read from file (more secure)
+        with open(args.meta_token_file) as f:
+            meta_token = f.read().strip()
+    elif args.meta_token:
+        # Direct argument (less secure, show warning)
+        meta_token = args.meta_token
+        print(
+            "⚠️  WARNING: Passing tokens via --meta-token is insecure. "
+            "Use --meta-token-file instead."
+        )
+    else:
+        # Prompt securely if not provided
+        import getpass
+
+        meta_token = getpass.getpass("Enter Meta access token (or press Enter to skip): ")
+        if not meta_token:
+            meta_token = None
+
     # Confirm
     print(f"\n⚠️  You are about to onboard customer: {args.customer_name}")
     print(f"   Customer ID: {args.customer_id}")
@@ -281,7 +305,7 @@ def main():
         customer_name=args.customer_name,
         gcp_project_id=args.gcp_project_id,
         meta_ad_account_ids=meta_accounts,
-        meta_access_token=args.meta_token or "",
+        meta_access_token=meta_token or "",
         registry_project_id=args.registry_project,
         primary_contact_email=args.email,
         tags=tags,

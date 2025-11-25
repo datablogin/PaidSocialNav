@@ -64,14 +64,22 @@ class CustomerRegistry:
 
         Args:
             registry_project_id: GCP project ID for central registry.
-                               Defaults to env var REGISTRY_PROJECT_ID or current project.
+                               Defaults to env var REGISTRY_PROJECT_ID or GCP_PROJECT_ID.
+
+        Raises:
+            ValueError: If registry project ID cannot be determined.
         """
         self.registry_project_id = (
             registry_project_id
             or os.getenv("REGISTRY_PROJECT_ID")
             or os.getenv("GCP_PROJECT_ID")
-            or "topgolf-460202"  # Default primary project
         )
+
+        if not self.registry_project_id:
+            raise ValueError(
+                "Registry project ID must be provided via parameter, "
+                "REGISTRY_PROJECT_ID env var, or GCP_PROJECT_ID env var"
+            )
         self.registry_dataset = "paidsocialnav_registry"
         self.customers_table = f"{self.registry_project_id}.{self.registry_dataset}.customers"
 
@@ -314,11 +322,28 @@ class CustomerRegistry:
 
         return self.get_customer(customer_id)  # type: ignore[return-value]
 
+    def _infer_bq_type(self, value: Any) -> str:
+        """Infer BigQuery type from Python value."""
+        if isinstance(value, bool):
+            return "BOOL"
+        elif isinstance(value, int):
+            return "INT64"
+        elif isinstance(value, float):
+            return "FLOAT64"
+        elif isinstance(value, str):
+            return "STRING"
+        elif isinstance(value, list):
+            return "JSON"
+        elif isinstance(value, dict):
+            return "JSON"
+        else:
+            return "STRING"
+
     def update_customer(
         self, customer_id: str, **updates: Any
     ) -> Customer | None:
         """
-        Update customer fields.
+        Update customer fields using parameterized queries.
 
         Args:
             customer_id: Customer to update
@@ -329,29 +354,37 @@ class CustomerRegistry:
         """
         bq = self._get_bq_client()
 
-        # Build UPDATE SET clause
-        set_clauses = []
-        for key, value in updates.items():
-            if isinstance(value, str):
-                set_clauses.append(f"{key} = '{value}'")
-            elif isinstance(value, (list, dict)):
-                import json
-
-                set_clauses.append(f"{key} = JSON '{json.dumps(value)}'")
-            else:
-                set_clauses.append(f"{key} = {value}")
-
-        set_clauses.append(f"updated_at = CURRENT_TIMESTAMP()")
-
-        set_clause = ", ".join(set_clauses)
+        # Build parameterized UPDATE query
+        set_clauses = [f"{key} = @{key}" for key in updates.keys()]
+        set_clauses.append("updated_at = CURRENT_TIMESTAMP()")
 
         query = f"""
         UPDATE `{self.customers_table}`
-        SET {set_clause}
-        WHERE customer_id = '{customer_id}'
+        SET {', '.join(set_clauses)}
+        WHERE customer_id = @customer_id
         """
 
-        bq.client.query(query).result()
+        # Prepare parameters - handle JSON types specially
+        import json
+        query_parameters = [
+            bigquery.ScalarQueryParameter("customer_id", "STRING", customer_id)
+        ]
+
+        for key, value in updates.items():
+            if isinstance(value, list | dict):
+                # Convert to JSON string
+                query_parameters.append(
+                    bigquery.ScalarQueryParameter(key, "JSON", json.dumps(value))
+                )
+            else:
+                query_parameters.append(
+                    bigquery.ScalarQueryParameter(key, self._infer_bq_type(value), value)
+                )
+
+        # Create job config with parameters
+        job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
+
+        bq.client.query(query, job_config=job_config).result()
         print(f"✓ Customer '{customer_id}' updated")
 
         return self.get_customer(customer_id)
