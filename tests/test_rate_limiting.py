@@ -1,7 +1,6 @@
 """Tests for MCP server rate limiting."""
 
 import pytest
-import asyncio
 from datetime import datetime, timedelta
 from mcp_server.rate_limiting import RateLimiter
 

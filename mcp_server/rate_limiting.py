@@ -1,7 +1,7 @@
 """Rate limiting for MCP server."""
 from collections import defaultdict
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 
 class RateLimiter:
@@ -13,7 +13,7 @@ class RateLimiter:
 
     def __init__(self, requests_per_minute: int = 60) -> None:
         self.requests_per_minute = requests_per_minute
-        self.buckets: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
+        self.buckets: dict[str, dict[str, Any]] = defaultdict(lambda: {
             "tokens": float(requests_per_minute),
             "last_update": datetime.now()
         })

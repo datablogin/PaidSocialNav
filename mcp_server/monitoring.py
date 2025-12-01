@@ -1,7 +1,8 @@
 """Monitoring and metrics for MCP server."""
 from paid_social_nav.core.logging_config import get_logger
 from datetime import datetime
-from typing import Any, Callable, Awaitable
+from typing import Any
+from collections.abc import Callable, Awaitable
 import time
 from functools import wraps
 
