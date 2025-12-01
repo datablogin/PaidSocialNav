@@ -13,6 +13,9 @@ from paid_social_nav.core.sync import sync_meta_insights
 from paid_social_nav.core.tenants import get_tenant
 from paid_social_nav.skills.audit_workflow import AuditWorkflowSkill
 from paid_social_nav.storage.bq import load_benchmarks_csv
+from mcp_server.error_handling import (
+    handle_tool_error,
+)
 
 
 class ValidationError(ValueError):
@@ -75,6 +78,7 @@ async def meta_sync_insights_tool(
             level_enum = level
 
         # Normalize date preset to DatePreset enum if provided
+        preset_enum: DatePreset | None
         if isinstance(date_preset, str):
             preset_enum = DatePreset(date_preset.upper())
         else:
@@ -121,13 +125,7 @@ async def meta_sync_insights_tool(
         }
 
     except Exception as e:
-        if ctx:
-            await ctx.error(f"Sync failed: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e),
-            "message": f"Failed to sync insights: {str(e)}",
-        }
+        return await handle_tool_error(e, "meta_sync_insights", ctx)
 
 
 async def audit_workflow_tool(
@@ -208,13 +206,7 @@ async def audit_workflow_tool(
         }
 
     except Exception as e:
-        if ctx:
-            await ctx.error(f"Audit workflow failed: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e),
-            "message": f"Audit workflow failed: {str(e)}",
-        }
+        return await handle_tool_error(e, "audit_workflow", ctx)
 
 
 async def get_tenant_config_tool(
@@ -270,13 +262,7 @@ async def get_tenant_config_tool(
         }
 
     except Exception as e:
-        if ctx:
-            await ctx.error(f"Failed to get tenant config: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e),
-            "message": f"Failed to retrieve tenant config: {str(e)}",
-        }
+        return await handle_tool_error(e, "get_tenant_config", ctx)
 
 
 async def load_benchmarks_tool(
@@ -330,10 +316,4 @@ async def load_benchmarks_tool(
         }
 
     except Exception as e:
-        if ctx:
-            await ctx.error(f"Failed to load benchmarks: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e),
-            "message": f"Failed to load benchmarks: {str(e)}",
-        }
+        return await handle_tool_error(e, "load_benchmarks", ctx)

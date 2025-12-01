@@ -8,6 +8,7 @@ from fastmcp import Context, FastMCP
 from starlette.responses import JSONResponse
 
 from mcp_server.auth import get_auth_provider
+from mcp_server.monitoring import metrics
 from mcp_server.prompts import (
     analyze_campaign_performance_prompt,
     audit_setup_wizard_prompt,
@@ -140,9 +141,16 @@ def data_sync_planner(
 
 # Health check endpoint
 @mcp.custom_route("/health", methods=["GET"])
-def health_check(request) -> JSONResponse:  # type: ignore[no-untyped-def]
+async def health_check(request) -> JSONResponse:  # type: ignore[no-untyped-def]
     """Health check endpoint for monitoring."""
     return JSONResponse({"status": "healthy", "service": "PaidSocialNav MCP Server"})
+
+
+# Metrics endpoint
+@mcp.custom_route("/metrics", methods=["GET"])
+async def get_metrics_endpoint(request) -> JSONResponse:  # type: ignore[no-untyped-def]
+    """Metrics endpoint for monitoring."""
+    return JSONResponse(metrics.get_metrics())
 
 
 if __name__ == "__main__":
