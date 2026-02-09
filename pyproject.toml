@@ -19,6 +19,7 @@ dependencies = [
   "google-auth>=2.0.0",
   "google-api-python-client>=2.0.0",
   "fastmcp>=2.13.1",
+  "tenacity>=8.2.0",
 ]
 
 [project.scripts]
