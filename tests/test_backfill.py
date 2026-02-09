@@ -1,7 +1,7 @@
 """Tests for backfill orchestration with window slicing and retries."""
 
 from datetime import date, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -126,6 +126,14 @@ class TestRetryableErrorDetection:
     def test_non_retryable_value_error(self):
         assert not _is_retryable_error(ValueError("Bad date format"))
 
+    def test_no_false_positive_on_embedded_500(self):
+        """Ensure '500' inside a larger number does not trigger a match."""
+        assert not _is_retryable_error(RuntimeError("loaded 5002 rows"))
+
+    def test_no_false_positive_on_account_id(self):
+        """Ensure '502' inside an account ID does not trigger a match."""
+        assert not _is_retryable_error(RuntimeError("account ID 50032"))
+
 
 class TestMakeRetryableCall:
     """Tests for _make_retryable_call with tenacity retry logic."""
@@ -170,6 +178,14 @@ class TestMakeRetryableCall:
                 func, max_attempts=3, min_wait=0.01, max_wait=0.02
             )
         assert func.call_count == 3
+
+    def test_non_retryable_error_reports_single_attempt(self):
+        """A non-retryable error on attempt 1 should report attempts=1."""
+        func = MagicMock(side_effect=ValueError("Bad data"))
+        with pytest.raises(ValueError) as exc_info:
+            _make_retryable_call(func, max_attempts=5)
+        # The exception should NOT claim 5 attempts were made
+        assert getattr(exc_info.value, "attempts", None) == 1
 
 
 class TestRunBackfill:
@@ -260,6 +276,26 @@ class TestRunBackfill:
         failed = [s for s in result.slice_results if not s.success]
         assert len(failed) == 1
         assert "Bad data" in failed[0].error
+
+    def test_backfill_failed_slice_reports_actual_attempts(self):
+        """A non-retryable error on attempt 1 should report attempts=1, not max_retries."""
+        dr = DateRange(since=date(2025, 1, 1), until=date(2025, 1, 1))
+        fetch_and_load = MagicMock(side_effect=ValueError("Bad data"))
+
+        result = run_backfill(
+            date_range=dr,
+            fetch_and_load=fetch_and_load,
+            granularity=SliceGranularity.DAILY,
+            max_retries=5,
+            min_backoff=0.01,
+            max_backoff=0.02,
+            continue_on_error=True,
+        )
+
+        assert result.failed_slices == 1
+        failed = result.slice_results[0]
+        assert not failed.success
+        assert failed.attempts == 1  # NOT 5
 
     def test_backfill_retries_rate_limits(self):
         """Rate limit errors are retried with backoff."""

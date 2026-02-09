@@ -27,9 +27,44 @@ logger = logging.getLogger(__name__)
 
 FALLBACK_ORDER: list[Entity] = [Entity.AD, Entity.ADSET, Entity.CAMPAIGN]
 
+_VALID_GRANULARITIES = {"daily", "weekly"}
+
 
 def _norm_act(account_id: str) -> str:
     return account_id if account_id.startswith("act_") else f"act_{account_id}"
+
+
+def _insight_record_to_bq_row(ir: Any, act: str) -> dict[str, Any]:
+    """Convert an InsightRecord to a BigQuery row dict.
+
+    This is the single source of truth for mapping adapter insight records
+    to the BigQuery ``insights`` table schema, used by both
+    ``sync_meta_insights`` and ``backfill_meta_insights``.
+    """
+    raw = ir.raw or {}
+    ad_id = raw.get("ad_id")
+    adset_id = raw.get("adset_id")
+    campaign_id = raw.get("campaign_id")
+
+    return {
+        "date": ir.date.isoformat(),
+        "level": ir.level.value,
+        "account_global_id": f"meta:account:{act}",
+        "campaign_global_id": f"meta:campaign:{campaign_id}"
+        if campaign_id
+        else None,
+        "adset_global_id": f"meta:adset:{adset_id}"
+        if adset_id
+        else None,
+        "ad_global_id": f"meta:ad:{ad_id}" if ad_id else None,
+        "impressions": ir.impressions,
+        "clicks": ir.clicks,
+        "spend": ir.spend,
+        "conversions": ir.conversions,
+        "ctr": ir.ctr,
+        "frequency": ir.frequency,
+        "raw_metrics": raw,
+    }
 
 
 @dataclass(frozen=True)
@@ -181,32 +216,7 @@ def sync_meta_insights(
                         date_preset=dp,
                         page_size=page_size,
                     ):
-                        raw = ir.raw or {}
-                        ad_id = raw.get("ad_id")
-                        adset_id = raw.get("adset_id")
-                        campaign_id = raw.get("campaign_id")
-
-                        rows.append(
-                            {
-                                "date": ir.date.isoformat(),
-                                "level": ir.level.value,
-                                "account_global_id": f"meta:account:{act}",
-                                "campaign_global_id": f"meta:campaign:{campaign_id}"
-                                if campaign_id
-                                else None,
-                                "adset_global_id": f"meta:adset:{adset_id}"
-                                if adset_id
-                                else None,
-                                "ad_global_id": f"meta:ad:{ad_id}" if ad_id else None,
-                                "impressions": ir.impressions,
-                                "clicks": ir.clicks,
-                                "spend": ir.spend,
-                                "conversions": ir.conversions,
-                                "ctr": ir.ctr,
-                                "frequency": ir.frequency,
-                                "raw_metrics": raw,
-                            }
-                        )
+                        rows.append(_insight_record_to_bq_row(ir, act))
                     # Load per chunk to keep memory bounded and enable dedup
                     if rows:
                         load_json_rows(
@@ -316,7 +326,7 @@ def backfill_meta_insights(
             backfill: BackfillResult summary dict.
 
     Raises:
-        ValueError: If date range is invalid.
+        ValueError: If date range is invalid or granularity is not valid.
         Exception: Re-raises slice errors if continue_on_error is False.
     """
     act = _norm_act(account_id)
@@ -325,9 +335,16 @@ def backfill_meta_insights(
         until=date.fromisoformat(until),
     )
 
+    normalised = granularity.lower()
+    if normalised not in _VALID_GRANULARITIES:
+        raise ValueError(
+            f"Invalid granularity {granularity!r}: must be one of "
+            f"{sorted(_VALID_GRANULARITIES)}"
+        )
+
     slice_granularity = (
         SliceGranularity.WEEKLY
-        if granularity.lower() == "weekly"
+        if normalised == "weekly"
         else SliceGranularity.DAILY
     )
 
@@ -348,32 +365,7 @@ def backfill_meta_insights(
             date_range=window,
             page_size=page_size,
         ):
-            raw = ir.raw or {}
-            ad_id = raw.get("ad_id")
-            adset_id = raw.get("adset_id")
-            campaign_id = raw.get("campaign_id")
-
-            rows.append(
-                {
-                    "date": ir.date.isoformat(),
-                    "level": ir.level.value,
-                    "account_global_id": f"meta:account:{act}",
-                    "campaign_global_id": f"meta:campaign:{campaign_id}"
-                    if campaign_id
-                    else None,
-                    "adset_global_id": f"meta:adset:{adset_id}"
-                    if adset_id
-                    else None,
-                    "ad_global_id": f"meta:ad:{ad_id}" if ad_id else None,
-                    "impressions": ir.impressions,
-                    "clicks": ir.clicks,
-                    "spend": ir.spend,
-                    "conversions": ir.conversions,
-                    "ctr": ir.ctr,
-                    "frequency": ir.frequency,
-                    "raw_metrics": raw,
-                }
-            )
+            rows.append(_insight_record_to_bq_row(ir, act))
 
         if rows:
             load_json_rows(

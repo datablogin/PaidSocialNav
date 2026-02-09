@@ -11,6 +11,7 @@ Addresses: https://github.com/datablogin/PaidSocialNav/issues/7
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -118,8 +119,9 @@ def _is_retryable_error(exc: BaseException) -> bool:
     # Meta API rate limit indicators
     if "rate limit" in msg or "too many calls" in msg:
         return True
-    # HTTP status code patterns
-    if "429" in msg or "500" in msg or "502" in msg or "503" in msg:
+    # HTTP status code patterns — use word boundaries to avoid false positives
+    # (e.g., "loaded 5002 rows" or "account ID 50032")
+    if re.search(r'\b(429|500|502|503)\b', msg):
         return True
     # Meta error code 32 = rate limit
     if "'code': 32" in msg or '"code": 32' in msg:
@@ -152,9 +154,12 @@ def _make_retryable_call(
 
     Raises:
         The original exception if all retries are exhausted or the error
-        is not retryable.
+        is not retryable.  The exception will have an ``attempts``
+        attribute attached with the actual number of attempts made.
     """
-    attempts_used = 0
+    # Mutable container so the inner function can communicate the attempt
+    # count back to the caller even when an exception is raised.
+    attempt_counter = [0]
 
     @retry(
         retry=retry_if_exception_type(_RetryableError),
@@ -163,33 +168,42 @@ def _make_retryable_call(
         reraise=True,
     )
     def _inner() -> int:
-        nonlocal attempts_used
-        attempts_used += 1
+        attempt_counter[0] += 1
         try:
             return func()
         except Exception as e:
             if _is_retryable_error(e):
                 logger.warning(
                     "Retryable error (attempt %d/%d): %s",
-                    attempts_used,
+                    attempt_counter[0],
                     max_attempts,
                     e,
                 )
                 raise _RetryableError(str(e)) from e
             raise  # Non-retryable: propagate immediately
 
+    def _attach_attempts(exc: BaseException) -> BaseException:
+        """Attach the actual attempt count to the exception."""
+        exc.attempts = attempt_counter[0]  # type: ignore[attr-defined]
+        return exc
+
     try:
         rows = _inner()
-        return rows, attempts_used
+        return rows, attempt_counter[0]
     except _RetryableError as e:
         # reraise=True causes tenacity to re-raise the _RetryableError
-        # directly; unwrap to the original exception
+        # directly; unwrap to the original exception without setting
+        # the _RetryableError as the cause (avoids confusing cause chain)
         if e.__cause__ is not None:
-            raise e.__cause__ from e
-        raise RuntimeError(str(e)) from e
+            raise _attach_attempts(e.__cause__)
+        raise _attach_attempts(RuntimeError(str(e))) from e
     except RetryError as e:
         # Fallback: unwrap the original exception from tenacity
-        raise e.last_attempt.exception() from e
+        raise _attach_attempts(e.last_attempt.exception()) from e
+    except Exception as e:
+        # Non-retryable errors: attach the attempt count so callers
+        # can report the actual number of attempts made.
+        raise _attach_attempts(e)
 
 
 def run_backfill(
@@ -282,10 +296,13 @@ def run_backfill(
 
         except Exception as e:
             elapsed = time.monotonic() - slice_start
+            # Use the actual attempt count attached by _make_retryable_call,
+            # falling back to max_retries if unavailable.
+            actual_attempts = getattr(e, "attempts", max_retries)
             slice_result = SliceResult(
                 date_range=window,
                 rows_loaded=0,
-                attempts=max_retries,
+                attempts=actual_attempts,
                 success=False,
                 error=str(e),
                 elapsed_seconds=round(elapsed, 2),
@@ -295,7 +312,7 @@ def run_backfill(
             logger.error(
                 "%s Slice failed after %d attempts: %s",
                 progress_prefix,
-                max_retries,
+                actual_attempts,
                 e,
             )
 
