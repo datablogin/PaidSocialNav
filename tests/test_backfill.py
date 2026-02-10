@@ -460,7 +460,6 @@ class TestBackfillMetaInsightsGranularityValidation:
 
     def test_invalid_granularity_raises_value_error(self):
         """backfill_meta_insights rejects unsupported granularity values."""
-        from unittest.mock import patch
         from paid_social_nav.core.sync import backfill_meta_insights
 
         with pytest.raises(ValueError, match="Invalid granularity"):
@@ -476,7 +475,7 @@ class TestBackfillMetaInsightsGranularityValidation:
 
     def test_valid_granularity_daily_accepted(self):
         """backfill_meta_insights accepts 'daily' granularity."""
-        from unittest.mock import patch, MagicMock as MM
+        from unittest.mock import patch
         from paid_social_nav.core.sync import backfill_meta_insights
         from paid_social_nav.core.backfill import BackfillResult
 
@@ -496,7 +495,7 @@ class TestBackfillMetaInsightsGranularityValidation:
 
     def test_valid_granularity_weekly_accepted(self):
         """backfill_meta_insights accepts 'weekly' (case-insensitive)."""
-        from unittest.mock import patch, MagicMock as MM
+        from unittest.mock import patch
         from paid_social_nav.core.sync import backfill_meta_insights
         from paid_social_nav.core.backfill import BackfillResult
 

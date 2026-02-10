@@ -338,7 +338,7 @@ def backfill_meta_insights(
         valid = sorted(e.value for e in SliceGranularity)
         raise ValueError(
             f"Invalid granularity {granularity!r}: must be one of {valid}"
-        )
+        ) from None
 
     adapter = MetaAdapter(access_token=access_token)
 
