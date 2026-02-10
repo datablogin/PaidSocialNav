@@ -441,3 +441,78 @@ class TestBackfillResult:
     def test_empty_result_not_success(self):
         result = BackfillResult(total_slices=0)
         assert not result.success
+
+
+class TestMakeRetryableCallEdgeCases:
+    """Edge-case tests for _make_retryable_call."""
+
+    def test_func_returning_zero_succeeds(self):
+        """A function returning 0 (falsy int) should succeed, not be treated as failure."""
+        func = MagicMock(return_value=0)
+        rows, attempts = _make_retryable_call(func, max_attempts=3)
+        assert rows == 0
+        assert attempts == 1
+        func.assert_called_once()
+
+
+class TestBackfillMetaInsightsGranularityValidation:
+    """Tests for granularity validation in backfill_meta_insights."""
+
+    def test_invalid_granularity_raises_value_error(self):
+        """backfill_meta_insights rejects unsupported granularity values."""
+        from unittest.mock import patch
+        from paid_social_nav.core.sync import backfill_meta_insights
+
+        with pytest.raises(ValueError, match="Invalid granularity"):
+            backfill_meta_insights(
+                account_id="act_123",
+                project_id="proj",
+                dataset="ds",
+                access_token="tok",
+                since="2025-01-01",
+                until="2025-01-07",
+                granularity="monthly",
+            )
+
+    def test_valid_granularity_daily_accepted(self):
+        """backfill_meta_insights accepts 'daily' granularity."""
+        from unittest.mock import patch, MagicMock as MM
+        from paid_social_nav.core.sync import backfill_meta_insights
+        from paid_social_nav.core.backfill import BackfillResult
+
+        mock_result = BackfillResult(total_rows=5, total_slices=1, successful_slices=1)
+
+        with patch("paid_social_nav.core.sync.MetaAdapter"),              patch("paid_social_nav.core.sync.ensure_dataset"),              patch("paid_social_nav.core.sync.ensure_insights_table"),              patch("paid_social_nav.core.sync.ensure_dim_ad_table"),              patch("paid_social_nav.core.sync.run_backfill", return_value=mock_result):
+            result = backfill_meta_insights(
+                account_id="act_123",
+                project_id="proj",
+                dataset="ds",
+                access_token="tok",
+                since="2025-01-01",
+                until="2025-01-01",
+                granularity="daily",
+            )
+            assert result["rows"] == 5
+
+    def test_valid_granularity_weekly_accepted(self):
+        """backfill_meta_insights accepts 'weekly' (case-insensitive)."""
+        from unittest.mock import patch, MagicMock as MM
+        from paid_social_nav.core.sync import backfill_meta_insights
+        from paid_social_nav.core.backfill import BackfillResult
+
+        mock_result = BackfillResult(total_rows=10, total_slices=1, successful_slices=1)
+
+        with patch("paid_social_nav.core.sync.MetaAdapter"),              patch("paid_social_nav.core.sync.ensure_dataset"),              patch("paid_social_nav.core.sync.ensure_insights_table"),              patch("paid_social_nav.core.sync.ensure_dim_ad_table"),              patch("paid_social_nav.core.sync.run_backfill", return_value=mock_result) as mock_bf:
+            result = backfill_meta_insights(
+                account_id="act_123",
+                project_id="proj",
+                dataset="ds",
+                access_token="tok",
+                since="2025-01-01",
+                until="2025-01-14",
+                granularity="Weekly",
+            )
+            assert result["rows"] == 10
+            # Verify SliceGranularity.WEEKLY was passed to run_backfill
+            call_kwargs = mock_bf.call_args[1]
+            assert call_kwargs["granularity"] == SliceGranularity.WEEKLY

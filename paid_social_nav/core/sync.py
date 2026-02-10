@@ -9,7 +9,6 @@ from collections.abc import Iterable
 
 from ..adapters.meta.adapter import MetaAdapter
 from ..core.backfill import (
-    BackfillResult,
     SliceGranularity,
     run_backfill,
 )
@@ -26,8 +25,6 @@ from ..storage.bq import (
 logger = logging.getLogger(__name__)
 
 FALLBACK_ORDER: list[Entity] = [Entity.AD, Entity.ADSET, Entity.CAMPAIGN]
-
-_VALID_GRANULARITIES = {"daily", "weekly"}
 
 
 def _norm_act(account_id: str) -> str:
@@ -323,7 +320,7 @@ def backfill_meta_insights(
         Dict with keys:
             rows: Total rows loaded.
             table: Full BigQuery table path.
-            backfill: BackfillResult summary dict.
+            backfill: Backfill result summary dict.
 
     Raises:
         ValueError: If date range is invalid or granularity is not valid.
@@ -335,18 +332,13 @@ def backfill_meta_insights(
         until=date.fromisoformat(until),
     )
 
-    normalised = granularity.lower()
-    if normalised not in _VALID_GRANULARITIES:
+    try:
+        slice_granularity = SliceGranularity(granularity.lower())
+    except ValueError:
+        valid = sorted(e.value for e in SliceGranularity)
         raise ValueError(
-            f"Invalid granularity {granularity!r}: must be one of "
-            f"{sorted(_VALID_GRANULARITIES)}"
+            f"Invalid granularity {granularity!r}: must be one of {valid}"
         )
-
-    slice_granularity = (
-        SliceGranularity.WEEKLY
-        if normalised == "weekly"
-        else SliceGranularity.DAILY
-    )
 
     adapter = MetaAdapter(access_token=access_token)
 
